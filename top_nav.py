@@ -37,7 +37,7 @@ def _theme_css(light):
     }}
     [data-testid="stApp"] p, [data-testid="stApp"] h1,
     [data-testid="stApp"] h2, [data-testid="stApp"] h3,
-    [data-testid="stApp"] label, [data-testid="stApp"] span,
+    [data-testid="stApp"] label,
     [data-testid="stSidebar"] p, [data-testid="stSidebar"] label {{
       color: {text};
     }}
@@ -65,17 +65,21 @@ def _theme_css(light):
       color: {text} !important;
     }}
     .st-key-radar_top_nav {{
-      position: sticky;
-      top: 0;
+      position: relative;
+      top: auto;
       z-index: 999;
       background: {panel};
       border: 1px solid {border};
       border-radius: 12px;
-      padding: 10px 14px 3px;
+      padding: 18px 14px 12px;
+      margin-top: 24px;
       margin-bottom: 16px;
+      overflow: visible !important;
       box-shadow: 0 8px 25px rgba(5, 15, 35, .10);
     }}
     .st-key-radar_top_nav [data-testid="stPopover"] button {{
+      min-height: 2.75rem !important;
+      line-height: 1.45 !important;
       background: transparent !important;
       color: {text} !important;
       border: none !important;
@@ -87,12 +91,19 @@ def _theme_css(light):
       background: {hover} !important;
       color: {accent} !important;
     }}
+    .st-key-radar_top_nav [data-testid="stPopover"] button * {{
+      color: {text} !important;
+    }}
     .st-key-radar_top_nav [data-testid="stToggle"] {{
       margin-top: 4px;
     }}
     .st-key-radar_top_nav [data-testid="stToggle"] label {{
       color: {text} !important;
       white-space: nowrap;
+    }}
+    [data-testid="stPopoverBody"] *,
+    [data-testid="stPopoverBody"] a {{
+      color: {text} !important;
     }}
     [data-testid="stPopoverBody"] {{
       border: 1px solid {border};
@@ -103,10 +114,18 @@ def _theme_css(light):
     """
 
 
+def _save_theme():
+    # Widget key is temporary and can be cleaned when switching Streamlit pages.
+    # Copy to a non-widget session key before navigating.
+    st.session_state["radar_light_theme"] = bool(st.session_state["_radar_theme_toggle"])
+
+
 def show_top_nav():
-    """置頂 HODA 風格主選單。點開即出現浮動選單，不佔用頁面內容。"""
+    """上方六個浮動分類與跨頁保留的黑／白模式。"""
     if "radar_light_theme" not in st.session_state:
-        st.session_state["radar_light_theme"] = False
+        st.session_state["radar_light_theme"] = st.query_params.get("theme") == "light"
+    # Restore widget state on every page, rather than relying on widget-key persistence.
+    st.session_state["_radar_theme_toggle"] = bool(st.session_state["radar_light_theme"])
     st.markdown(_theme_css(bool(st.session_state["radar_light_theme"])), unsafe_allow_html=True)
     with st.container(key="radar_top_nav"):
         cols = st.columns([1, 1, 1.2, 1, 1, 1, 1.05], gap="small", vertical_alignment="center")
@@ -116,5 +135,5 @@ def show_top_nav():
                     for label, path in links:
                         st.page_link(path, label=label, use_container_width=True)
         with cols[-1]:
-            st.toggle("☀️ 白底模式", key="radar_light_theme", help="關閉為黑底模式；切換後立即套用。")
-    st.caption("點選上方選單展開功能；黑／白模式於本次瀏覽階段保留。")
+            st.toggle("☀️ 白底模式", key="_radar_theme_toggle",
+                      on_change=_save_theme, help="關閉為黑底模式；切換後立即套用。")

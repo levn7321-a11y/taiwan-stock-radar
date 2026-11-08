@@ -1,0 +1,24 @@
+
+name: V2.6 資料庫健康檢查
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: 下載 GitHub 專案
+        uses: actions/checkout@v4
+
+      - name: 安裝 Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: 檢查行情與法人資料
+        run: python check_v26.py

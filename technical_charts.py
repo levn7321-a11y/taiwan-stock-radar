@@ -57,7 +57,7 @@ def aggregate_institutional(inst, calendar, frequency):
     return frame / 1000.0
 
 
-def chart_view(bars, panel, inst=None, calendar=None):
+def chart_view(bars, panel, frequency="日線", inst=None, calendar=None):
     """建立 K 棒、均線與可切換下方副圖；法人單位為張。"""
     if bars.empty:
         return None, "查無價格行情"
@@ -113,7 +113,7 @@ def chart_view(bars, panel, inst=None, calendar=None):
             warning="目前沒有法人資料，無法顯示買賣超"
             bottom=base.mark_point(opacity=0).encode(x=xt,y=alt.Y("volume:Q",title="缺法人資料"))
         else:
-            values=aggregate_institutional(inst,pd.DatetimeIndex(calendar),df.attrs.get("frequency","日線"))
+            values=aggregate_institutional(inst,pd.DatetimeIndex(calendar),frequency)
             key=panel
             joined=df[["日期","date"]].copy()
             joined[key]=values[key].reindex(pd.DatetimeIndex(joined["date"])).to_numpy()

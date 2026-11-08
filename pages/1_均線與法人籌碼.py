@@ -9,6 +9,7 @@ import altair as alt
 import streamlit as st
 from top_nav import show_top_nav
 from price_periods import convert_price_period, chart_tail_count
+from technical_charts import chart_view, PANEL_OPTIONS, calculate_kd
 
 st.set_page_config(
     page_title="台股 AI 突破雷達 V2.6.8",
@@ -103,7 +104,7 @@ def load_prices(path, stamp):
     with sqlite3.connect(path) as conn:
         return pd.read_sql_query(
             """
-            SELECT date,market,code,name,close,volume
+            SELECT date,market,code,name,open,high,low,close,volume
             FROM daily
             ORDER BY market,code,date
             """, conn
@@ -442,95 +443,41 @@ def render_stock_analysis(market, code, name, inst):
     show = chart_source.tail(chart_tail_count(timeframe or "日線", period, len(chart_source)))
     st.caption(f"目前顯示：{timeframe or '日線'}｜週／月線為收盤價聚合後重新計算的各期均線，非日線均線。")
 
-    st.subheader("📉 股價與技術均線")
-
-    lines = [
-        "close", "MA5", "MA10",
-        "MA20", "MA60", "MA240"
-    ]
-
-    chart_data = (
-        show[lines]
-        .reset_index()
-        .melt(
-            "date",
-            var_name="指標",
-            value_name="價格"
+    st.subheader("📈 K 線與技術指標")
+    indicator = st.segmented_control(
+        "下方指標切換", PANEL_OPTIONS,
+        default="成交量", key=f"indicator_{market}_{code}"
+    )
+    # 使用該市場完整交易日曆檢查法人資料是否漏日。
+    calendar = prices.loc[
+        (prices["market"] == market) &
+        (prices["date"] <= s.index.max()), "date"
+    ].dropna().drop_duplicates().sort_values()
+    own_inst = inst.loc[
+        (inst["market"] == market) & (inst["code"] == code),
+        ["date", "foreign_net", "trust_net", "dealer_net"]
+    ].copy() if not inst.empty else pd.DataFrame()
+    kchart, missing = chart_view(
+        show, indicator or "成交量", frequency=timeframe or "日線",
+        inst=own_inst, calendar=calendar
+    )
+    if kchart is not None:
+        st.altair_chart(kchart, use_container_width=True)
+        detail = calculate_kd(show)
+        end_bar = detail.iloc[-1]
+        change = float(end_bar["close"] - end_bar["open"])
+        color = "🔴" if change > 0 else "🟢" if change < 0 else "⚪"
+        st.caption(
+            f"{color} 最新 {timeframe or '日線'}："
+            f"開 {end_bar['open']:,.2f}｜高 {end_bar['high']:,.2f}｜"
+            f"低 {end_bar['low']:,.2f}｜收 {end_bar['close']:,.2f}｜"
+            f"開收漲跌 {change:+,.2f}"
         )
-        .dropna(subset=["價格"])
-    )
-
-    chart = (
-        alt.Chart(chart_data)
-        .mark_line(strokeWidth=2)
-        .encode(
-            x=alt.X("date:T", title="交易日期"),
-            y=alt.Y(
-                "價格:Q",
-                scale=alt.Scale(zero=False),
-                title="股價"
-            ),
-            color=alt.Color(
-                "指標:N",
-                scale=alt.Scale(
-                    domain=lines,
-                    range=[
-                        "#ffffff", "#f6bf54",
-                        "#58c6f5", "#d77df1",
-                        "#43c59e", "#ef6576"
-                    ]
-                )
-            ),
-            tooltip=[
-                alt.Tooltip("date:T", title="日期"),
-                "指標:N",
-                alt.Tooltip("價格:Q", format=".2f")
-            ]
-        )
-        .properties(height=380)
-    )
-
-    st.altair_chart(
-        chart, use_container_width=True
-    )
-
-    st.subheader("📊 成交量與20日均量")
-
-    volume_long = (
-        show[["volume", "均量20"]]
-        .reset_index()
-        .melt(
-            "date",
-            var_name="指標",
-            value_name="成交量"
-        )
-        .dropna(subset=["成交量"])
-    )
-
-    volume_chart = (
-        alt.Chart(volume_long)
-        .mark_line(strokeWidth=2)
-        .encode(
-            x=alt.X("date:T", title="交易日期"),
-            y=alt.Y("成交量:Q", title="成交量"),
-            color=alt.Color(
-                "指標:N",
-                scale=alt.Scale(
-                    domain=["volume", "均量20"],
-                    range=["#4c9ec5", "#f6bf54"]
-                )
-            ),
-            tooltip=[
-                "date:T", "指標:N",
-                alt.Tooltip("成交量:Q", format=",.0f")
-            ]
-        )
-        .properties(height=170)
-    )
-
-    st.altair_chart(
-        volume_chart, use_container_width=True
-    )
+        if (indicator or "成交量") == "KD線" and pd.notna(end_bar["K"]):
+            st.caption(f"KD（9,3,3）：K {end_bar['K']:.1f}｜D {end_bar['D']:.1f}")
+    if missing:
+        st.warning(missing)
+    st.caption("台股慣例：紅 K 為收漲、綠 K 為收跌。法人買賣超以張表示，紅色買超、綠色賣超；滑鼠移入圖表可查看數值。")
 
     if pd.notna(latest["均量20"]) and latest["均量20"] > 0:
         ratio = latest["volume"] / latest["均量20"]
@@ -627,11 +574,7 @@ def render_stock_analysis(market, code, name, inst):
             use_container_width=True
         )
 
-    st.caption(
-        "目前顯示收盤價均線走勢，"
-        "尚非開高低收日K棒；"
-        "資料僅供研究，非投資建議。"
-    )
+    st.caption("技術訊號僅供研究，未還原除權息，非投資建議。")
 
 
 st.title("📈 台股 AI 突破雷達 V2.6.8｜專業看盤")
@@ -652,7 +595,7 @@ if DB.exists():
         )
         prices["code"] = prices["code"].astype(str).str.strip()
 
-        for c in ["close", "volume"]:
+        for c in ["open", "high", "low", "close", "volume"]:
             prices[c] = pd.to_numeric(
                 prices[c], errors="coerce"
             )

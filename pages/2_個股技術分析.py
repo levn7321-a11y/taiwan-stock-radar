@@ -7,6 +7,7 @@ import requests
 import streamlit as st
 from top_nav import show_top_nav
 from price_periods import convert_price_period, chart_tail_count
+from technical_charts import chart_view, PANEL_OPTIONS, calculate_kd
 
 st.set_page_config(
     page_title="個股技術分析",
@@ -266,19 +267,54 @@ chart_source = convert_price_period(df, timeframe or "日線")
 chart = chart_source.tail(chart_tail_count(timeframe or "日線", period, len(chart_source)))
 st.caption(f"目前顯示：{timeframe or '日線'}｜週／月線均線依各週／各月收盤重新計算。")
 
-st.subheader("📊 股價與均線")
-st.line_chart(
-    chart[
-        ["close", "MA5", "MA10", "MA20", "MA60", "MA240"]
-    ],
-    use_container_width=True
+st.subheader("📈 紅綠 K 線與技術指標")
+indicator = st.segmented_control(
+    "下方指標切換", PANEL_OPTIONS, default="成交量", key="detail_indicator"
 )
+@st.cache_data(ttl=300)
+def load_stock_inst(m, c, stamp):
+    with sqlite3.connect(DB) as conn:
+        exists=conn.execute(
+            "SELECT 1 FROM sqlite_master WHERE type='table' AND name='institutional'"
+        ).fetchone()
+        if not exists:
+            return pd.DataFrame()
+        return pd.read_sql_query(
+            "SELECT date, foreign_net, trust_net, dealer_net FROM institutional WHERE market=? AND code=?",
+            conn, params=(m,c)
+        )
 
-st.subheader("📉 成交量")
-st.bar_chart(
-    chart[["volume"]],
-    use_container_width=True
+@st.cache_data(ttl=300)
+def load_market_calendar(m, stamp):
+    with sqlite3.connect(DB) as conn:
+        dates=pd.read_sql_query(
+            "SELECT DISTINCT date FROM daily WHERE market=? ORDER BY date",
+            conn, params=(m,)
+        )
+    return pd.to_datetime(dates["date"], errors="coerce").dropna()
+
+stamp=DB.stat().st_mtime_ns
+stock_inst=load_stock_inst(market, code, stamp)
+market_calendar=load_market_calendar(market, stamp)
+chart_object, warning = chart_view(
+    chart, indicator or "成交量", frequency=timeframe or "日線",
+    inst=stock_inst, calendar=market_calendar
 )
+if chart_object is not None:
+    st.altair_chart(chart_object, use_container_width=True)
+    latest_bar=calculate_kd(chart).iloc[-1]
+    delta=float(latest_bar["close"]-latest_bar["open"])
+    marker="🔴" if delta>0 else "🟢" if delta<0 else "⚪"
+    st.caption(
+        f"{marker} 最新 {timeframe or '日線'}｜開 {latest_bar['open']:,.2f}｜"
+        f"高 {latest_bar['high']:,.2f}｜低 {latest_bar['low']:,.2f}｜"
+        f"收 {latest_bar['close']:,.2f}｜開收漲跌 {delta:+,.2f}"
+    )
+    if indicator == "KD線" and pd.notna(latest_bar["K"]):
+        st.caption(f"KD（9,3,3）｜K {latest_bar['K']:.1f}｜D {latest_bar['D']:.1f}")
+if warning:
+    st.warning(warning)
+st.caption("台股慣例：紅漲綠跌。下方可切換成交量、KD、三大法人、外資；法人以張為單位，買超紅色、賣超綠色。")
 
 st.subheader("🔍 技術觀察")
 

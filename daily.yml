@@ -1,0 +1,42 @@
+name: Taiwan stock daily refresh
+on:
+  schedule:
+    # 17:30 Asia/Taipei, Monday-Friday (09:30 UTC)
+    - cron: '30 9 * * 1-5'
+  workflow_dispatch:
+    inputs:
+      backfill_days:
+        description: 'Optional historical backfill calendar days (0 = latest only)'
+        required: false
+        default: '0'
+permissions:
+  contents: write
+concurrency:
+  group: daily-stock-update
+  cancel-in-progress: false
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: true
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+      - run: pip install -r requirements.txt
+      - name: Fetch and persist data
+        env:
+          DAYS: ${{ github.event.inputs.backfill_days || '0' }}
+        run: python daily_update.py --backfill-days "$DAYS"
+      - name: Commit updated database
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add twstock.sqlite3
+          if ! git diff --cached --quiet; then
+            git commit -m 'data: update official daily stock prices'
+            git push
+          fi

@@ -158,7 +158,10 @@ def filter_security_type(df, choice):
 def signed_lots(value, decimals=0):
     if pd.isna(value):
         return "—"
-    return f"{float(value):+,.{decimals}f}"
+    value = float(value)
+    if decimals == 0 and value != 0 and abs(value) < 0.5:
+        decimals = 3
+    return f"{value:+,.{decimals}f}"
 
 
 def trading_dates_by_market(price_df, market, n):

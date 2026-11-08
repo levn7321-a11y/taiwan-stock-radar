@@ -12,13 +12,15 @@ import tempfile
 ROOT = Path(__file__).resolve().parent
 DB = ROOT / "twstock.sqlite3"
 ARCHIVE = ROOT / "twstock_full.sqlite3.gz"
+MARKER = ROOT / ".twstock_archive_loaded"
 
 
 def ensure_db(force=False):
     """Use the complete compressed historical data if present and newer."""
     if not ARCHIVE.exists():
         return DB
-    if not force and DB.exists() and DB.stat().st_mtime >= ARCHIVE.stat().st_mtime:
+    stamp = f"{ARCHIVE.stat().st_size}:{ARCHIVE.stat().st_mtime_ns}"
+    if not force and DB.exists() and MARKER.exists() and MARKER.read_text() == stamp:
         return DB
     tmp_path = None
     try:
@@ -37,6 +39,7 @@ def ensure_db(force=False):
                 raise ValueError("解壓縮後 SQLite 完整性檢查失敗")
         os.replace(tmp_path, DB)
         tmp_path = None
+        MARKER.write_text(stamp)
         return DB
     finally:
         if tmp_path is not None:

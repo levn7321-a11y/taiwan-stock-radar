@@ -8,6 +8,7 @@ import pandas as pd
 import altair as alt
 import streamlit as st
 from top_nav import show_top_nav
+from price_periods import convert_price_period, chart_tail_count
 
 st.set_page_config(
     page_title="台股 AI 突破雷達 V2.6.8",
@@ -426,6 +427,10 @@ def render_stock_analysis(market, code, name, inst):
         f"｜有效交易日：{len(s)}"
     )
 
+    timeframe = st.segmented_control(
+        "K 線週期", ["日線", "週線", "月線"],
+        default="日線", key=f"timeframe_{market}_{code}"
+    )
     period = st.radio(
         "觀察期間",
         ["3個月", "6個月", "1年", "全部"],
@@ -433,15 +438,9 @@ def render_stock_analysis(market, code, name, inst):
         horizontal=True,
         key=f"period_{market}_{code}"
     )
-
-    days = {
-        "3個月": 65,
-        "6個月": 130,
-        "1年": 260,
-        "全部": len(s)
-    }
-
-    show = s.tail(days[period])
+    chart_source = convert_price_period(s, timeframe or "日線")
+    show = chart_source.tail(chart_tail_count(timeframe or "日線", period, len(chart_source)))
+    st.caption(f"目前顯示：{timeframe or '日線'}｜週／月線為收盤價聚合後重新計算的各期均線，非日線均線。")
 
     st.subheader("📉 股價與技術均線")
 

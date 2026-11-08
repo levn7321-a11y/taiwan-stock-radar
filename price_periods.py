@@ -24,7 +24,7 @@ def convert_price_period(df, frequency, *, index_col="date"):
             frame[c] = pd.NA
         frame[c] = pd.to_numeric(frame[c], errors="coerce")
     if frequency != "日線":
-        rule = "W-FRI" if frequency == "週線" else "ME"
+        rule = "W-FRI" if frequency == "週線" else "M"
         frame = frame.resample(rule).agg({
             "open": "first", "high": "max", "low": "min",
             "close": "last", "volume": "sum",

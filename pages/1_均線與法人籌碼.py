@@ -744,8 +744,20 @@ with tab_radar:
         with e:
             keyword = st.text_input(
                 "搜尋代號／名稱",
-                placeholder="例如2330或台積電"
+                placeholder="例如 2330 或台積電"
             )
+            if st.button("🔎 搜尋個股", key="submit_stock_search", use_container_width=True):
+                term = keyword.strip().casefold()
+                exact = ranking.loc[
+                    (ranking["code"].astype(str).str.casefold() == term) |
+                    (ranking["name"].astype(str).str.casefold() == term)
+                ] if term else pd.DataFrame()
+                if len(exact) == 1:
+                    match = exact.iloc[0]
+                    record_stock_search(match["market"], match["code"], stock_options)
+                    st.success(f"已搜尋：{match['code']} {match['name']}")
+                elif term:
+                    st.info("輸入可唯一辨識的股票代號或名稱，才計入站內熱門搜尋。")
 
         data = filter_security_type(
             market_filter(ranking, market), security_type
@@ -821,12 +833,23 @@ with tab_radar:
                 index=1
             )
 
-        st.caption(
-            "藍色股票名稱可直接點擊。"
-            "依顯示檔數自動調整表格字體。"
-        )
+        st.caption("勾選左欄後按「加入勾選股票」；點選右側「查看圖表」開啟個股分析。")
 
         render_ranking_table(data, count)
+
+        st.subheader("🔎 站內熱門搜尋 TOP 10")
+        popular = top_stock_searches(stock_options)
+        if popular:
+            hot = pd.DataFrame(popular, columns=["市場", "代號", "股票", "搜尋次數"])
+            hot.insert(0, "名次", range(1, len(hot) + 1))
+            hot["查看圖表"] = [
+                stock_url(m, code) for m, code in zip(hot["市場"], hot["代號"])
+            ]
+            st.dataframe(hot.drop(columns=["市場"]), hide_index=True, use_container_width=True,
+                         column_config={"查看圖表": st.column_config.LinkColumn("個股分析", display_text="查看圖表")})
+        else:
+            st.info("目前尚無有效股票代號搜尋紀錄。")
+        st.caption("僅統計本站使用者主動提交的有效個股搜尋，非全台市場熱度；部署重啟後可能歸零。")
 
         st.download_button(
             "⬇️ 下載排行榜 CSV",

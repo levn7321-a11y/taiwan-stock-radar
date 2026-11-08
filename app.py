@@ -9,6 +9,7 @@ import streamlit as st
 
 from storage import init_db, save, load, fetch_latest, FIELDS
 from history import backfill, day
+from top_nav import show_top_nav
 
 
 def scan(df, min_turnover=5000000, vol_multiple=1.8, breakout_days=20):
@@ -68,16 +69,8 @@ def scan(df, min_turnover=5000000, vol_multiple=1.8, breakout_days=20):
     return pd.DataFrame(out).sort_values(['分數', '量比'], ascending=False) if out else pd.DataFrame()
 
 
-st.set_page_config(page_title='台股 AI 突破雷達 V2.0', layout='wide', initial_sidebar_state='expanded')
-
-# 明確提供多頁入口，不依賴 Streamlit 自動產生的頁面導覽。
-with st.sidebar:
-    st.header('📍 頁面導覽')
-    st.caption('可切換首頁、法人籌碼及自選個股。')
-    st.page_link('app.py', label='台股 AI 突破雷達首頁', icon='🏠')
-    st.page_link('pages/1_均線與法人籌碼.py', label='均線與法人籌碼／自選個股', icon='📊')
-    st.page_link('pages/2_個股技術分析.py', label='個股技術分析', icon='📈')
-    st.divider()
+st.set_page_config(page_title='台股 AI 突破雷達 V2.0', layout='wide', initial_sidebar_state='collapsed')
+show_top_nav()
 
 st.title('📈 台股 AI 突破雷達 V2.0')
 st.caption('上市＋上櫃｜日線突破、爆量、短線異動｜研究用途，非投資建議｜非盤中即時報價')

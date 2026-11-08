@@ -7,6 +7,7 @@ from urllib.parse import urlencode
 import pandas as pd
 import altair as alt
 import streamlit as st
+from top_nav import show_top_nav
 
 st.set_page_config(
     page_title="台股 AI 突破雷達 V2.6.8",
@@ -17,6 +18,8 @@ st.set_page_config(
 
 DB = Path(__file__).resolve().parents[1] / "twstock.sqlite3"
 MA = (5, 10, 20, 60, 240)
+
+show_top_nav()
 
 st.markdown("""
 <style>

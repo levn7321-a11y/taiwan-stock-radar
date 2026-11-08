@@ -1,0 +1,22 @@
+name: V2.6.8 PR 程式驗證
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [feature/v268-stock-filter-lot-display]
+permissions:
+  contents: read
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+      - name: Compile Streamlit pages
+        run: python -m compileall -q app.py pages
+      - name: Unit tests
+        run: python -m unittest discover -s tests -p 'test_v268.py' -v

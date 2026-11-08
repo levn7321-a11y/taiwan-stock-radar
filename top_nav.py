@@ -176,13 +176,13 @@ def _save_theme():
     st.query_params["theme"] = "light" if st.session_state["radar_light_theme"] else "dark"
 
 
-def show_top_nav():
+def show_top_nav(*, restore_db=True):
     """上方六個浮動分類與跨頁保留的黑／白模式。"""
-    try:
-        ensure_db()
-    except (OSError, ValueError, __import__("sqlite3").DatabaseError) as exc:
-        st.error(f"載入完整歷史資料庫失敗：{exc}")
-        st.stop()
+    if restore_db:
+        try:
+            ensure_db()
+        except (OSError, ValueError, sqlite3.DatabaseError) as exc:
+            st.warning(f"完整歷史資料載入失敗，暫用舊版行情：{exc}")
     if "radar_light_theme" not in st.session_state:
         st.session_state["radar_light_theme"] = st.query_params.get("theme", "light") != "dark"
     elif st.query_params.get("theme") in ("light", "dark"):

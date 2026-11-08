@@ -1,0 +1,46 @@
+name: MA240 真實日行情回補
+on:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/ma240_backfill.yml
+  workflow_dispatch:
+    inputs:
+      days:
+        description: "回補最近幾個日曆天 (最多370日)"
+        default: "370"
+        required: true
+permissions:
+  contents: write
+concurrency:
+  group: v26-database-update
+  cancel-in-progress: false
+jobs:
+  backfill:
+    runs-on: ubuntu-latest
+    timeout-minutes: 110
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: true
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+      - name: Backfill official OHLCV data for MA240
+        env:
+          DAYS: ${{ github.event.inputs.days || '370' }}
+        run: python backfill_ma240.py --days "$DAYS"
+      - name: Persist historical data
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add twstock.sqlite3
+          if ! git diff --cached --quiet; then
+            git commit -m "data: backfill official OHLCV history for MA240"
+            git pull --rebase origin main
+            git push origin HEAD:main
+          else
+            echo "No database changes to commit"
+          fi

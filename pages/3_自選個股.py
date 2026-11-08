@@ -6,8 +6,11 @@ from pathlib import Path
 
 import pandas as pd
 import streamlit as st
+from top_nav import show_top_nav
 
 st.set_page_config(page_title="自選個股｜台股 AI 突破雷達", page_icon="⭐", layout="wide")
+show_top_nav()
+
 DB = Path(__file__).resolve().parents[1] / "twstock.sqlite3"
 MAX_WATCH = 50
 ID_PATTERN = re.compile(r"^(上市|上櫃):([A-Za-z0-9]{4,6})$")

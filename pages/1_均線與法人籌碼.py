@@ -10,6 +10,7 @@ import streamlit as st
 from top_nav import show_top_nav
 from price_periods import convert_price_period, chart_tail_count
 from technical_charts import chart_view, PANEL_OPTIONS, calculate_kd
+from search_popularity import record_stock_search, top_stock_searches
 
 st.set_page_config(
     page_title="台股 AI 突破雷達 V2.6.8",
@@ -276,101 +277,63 @@ def fmt(value, decimals=2):
 
 
 def stock_url(market, code):
-    return "?" + urlencode({
-        "stock": str(code),
-        "market": str(market)
-    })
+    params = {"stock": str(code), "market": str(market),
+              "theme": "light" if st.session_state.get("radar_light_theme", True) else "dark"}
+    keys = st.session_state.get("radar_watch_keys", [])
+    if keys:
+        params["watch"] = ",".join(keys)
+    return "?" + urlencode(params)
 
 
 def render_ranking_table(df, count):
-    size = {10: 16, 20: 14, 50: 13}[count]
-
-    columns = [
-        ("date", "日期"),
-        ("market", "市場"),
-        ("code", "代號"),
-        ("name", "名稱"),
-        ("close", "收盤價"),
-        ("漲跌幅%", "漲跌幅%"),
-        ("volume", "成交量"),
-        ("量比", "量比"),
-        ("MA5", "MA5"),
-        ("MA10", "MA10"),
-        ("MA20", "MA20"),
-        ("MA60", "MA60"),
-        ("MA240", "MA240"),
-        ("多頭均線數", "多頭均線數"),
-        ("均線訊號", "均線訊號")
+    """可勾選加入自選的排行榜，日期與市場預設不顯示。"""
+    shown = df.head(count).copy()
+    if shown.empty:
+        st.info("目前沒有符合條件的股票。")
+        return
+    selected_keys = set(st.session_state.get("radar_watch_keys", []))
+    shown["加入自選"] = [
+        f"{m}:{code}" in selected_keys
+        for m, code in zip(shown["market"], shown["code"])
     ]
-
-    parts = [
-        f'<div class="stock-table-wrap" '
-        f'style="--stock-font:{size}px">',
-        '<table class="stock-table"><thead><tr>'
+    shown["查看分析"] = [
+        stock_url(m, code) for m, code in zip(shown["market"], shown["code"])
     ]
-
-    for _, title in columns:
-        parts.append(f"<th>{escape(title)}</th>")
-
-    parts.append("</tr></thead><tbody>")
-
-    for _, row in df.head(count).iterrows():
-        parts.append("<tr>")
-
-        for key, _ in columns:
-            value = row[key]
-
-            if key == "name":
-                url = escape(
-                    stock_url(row["market"], row["code"]),
-                    quote=True
-                )
-                cell = (
-                    f'<a class="stock-link" href="{url}" '
-                    f'target="_self">'
-                    f'{escape(str(value))}</a>'
-                )
-
-            elif key == "date":
-                cell = escape(
-                    pd.Timestamp(value).strftime("%Y-%m-%d")
-                )
-
-            elif key == "漲跌幅%":
-                color = (
-                    "stock-up" if value > 0
-                    else "stock-down" if value < 0
-                    else ""
-                ) if pd.notna(value) else ""
-                label = (
-                    f"{value:+.2f}"
-                    if pd.notna(value) else "—"
-                )
-                cell = (
-                    f'<span class="{color}">{label}</span>'
-                )
-
-            elif key == "volume":
-                cell = fmt(value, 0)
-
-            elif key in [
-                "close", "量比",
-                "MA5", "MA10", "MA20",
-                "MA60", "MA240"
-            ]:
-                cell = fmt(value)
-
-            else:
-                cell = escape(str(value))
-
-            parts.append(f"<td>{cell}</td>")
-
-        parts.append("</tr>")
-
-    parts.append("</tbody></table></div>")
-    st.markdown(
-        "".join(parts), unsafe_allow_html=True
+    names = {
+        "code": "股票代號", "name": "股票名稱", "close": "收盤價",
+        "volume": "成交量"
+    }
+    visible_columns = [
+        "加入自選", "code", "name", "close", "漲跌幅%", "volume", "量比",
+        "MA5", "MA10", "MA20", "MA60", "MA240", "多頭均線數",
+        "均線訊號", "查看分析"
+    ]
+    editor = shown[visible_columns].rename(columns=names).copy()
+    editor_key = "watch_editor_only" if st.session_state.get("watch_only", False) else "watch_editor_ranking"
+    edited = st.data_editor(
+        editor, hide_index=True, use_container_width=True,
+        num_rows="fixed", key=editor_key,
+        disabled=[c for c in editor.columns if c != "加入自選"],
+        column_config={
+            "加入自選": st.column_config.CheckboxColumn("加入自選", help="勾選後按下方加入按鈕"),
+            "查看分析": st.column_config.LinkColumn("個股分析", display_text="查看圖表"),
+            "收盤價": st.column_config.NumberColumn("收盤價", format="%.2f"),
+            "漲跌幅%": st.column_config.NumberColumn("漲跌幅%", format="%+.2f")
+        }
     )
+    if st.button("⭐ 加入勾選股票", key=f"add_checked_{editor_key}"):
+        additions = [
+            f"{m}:{code}" for m, code, checked in zip(
+                shown["market"], shown["code"], edited["加入自選"]
+            ) if checked
+        ]
+        old = list(st.session_state.get("radar_watch_keys", []))
+        updated = list(dict.fromkeys(old + additions))[:50]
+        if len(updated) == len(old):
+            st.info("未勾選新的股票，或已經加入自選。")
+        else:
+            save_watchlist(updated)
+            st.rerun()
 
 
 def get_history(market, code):
@@ -629,10 +592,12 @@ def read_watchlist(raw, valid_keys):
         item = item.strip()
         if item in valid_keys and item not in selected:
             selected.append(item)
-    return selected[:100]
+    return selected[:50]
 
 
 def save_watchlist(items):
+    items = list(dict.fromkeys(items))[:50]
+    st.session_state["radar_watch_keys"] = items
     if items:
         st.query_params["watch"] = ",".join(items[:100])
     elif "watch" in st.query_params:
@@ -645,7 +610,8 @@ if not ranking.empty:
         key = f"{row.market}:{row.code}"
         stock_options[key] = f"{row.code} {row.name}（{row.market}）"
 
-watchlist = read_watchlist(st.query_params.get("watch", ""), stock_options)
+watchlist = read_watchlist(st.query_params.get("watch", "") or ",".join(st.session_state.get("radar_watch_keys", [])), stock_options)
+st.session_state["radar_watch_keys"] = watchlist
 with st.sidebar:
     st.header("⭐ 自選個股")
     watch_only = st.toggle("只顯示自選個股畫面", value=st.query_params.get("view") == "watch", key="watch_only")
@@ -659,11 +625,11 @@ with st.sidebar:
         format_func=lambda key: "搜尋股票並加入" if not key else stock_options[key],
         key="watch_add",
     )
-    if st.button("＋ 加入自選", use_container_width=True, disabled=not chosen or chosen in watchlist):
+    if st.button("＋ 加入自選", use_container_width=True, disabled=not chosen or chosen in watchlist or len(watchlist) >= 50):
         watchlist.append(chosen)
         save_watchlist(watchlist)
         st.rerun()
-    st.caption(f"已收藏 {len(watchlist)} 檔（最多 100 檔）")
+    st.caption(f"已收藏 {len(watchlist)} 檔（最多 50 檔）")
     for key in watchlist:
         left, right = st.columns([5, 1])
         left.markdown(f"[{stock_options[key]}]({stock_url(*key.split(':', 1))}&watch={','.join(watchlist)}&view=watch)")
@@ -687,7 +653,9 @@ if selected_code and selected_market:
         picked = matched.iloc[0]
 
         if st.button("← 返回股票排行榜"):
+            remaining = {k: st.query_params[k] for k in ("theme", "watch") if k in st.query_params}
             st.query_params.clear()
+            st.query_params.update(remaining)
             st.rerun()
 
         render_stock_analysis(

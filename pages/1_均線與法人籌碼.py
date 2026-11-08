@@ -309,6 +309,12 @@ def render_ranking_table(df, count):
         "均線訊號", "查看分析"
     ]
     editor = shown[visible_columns].rename(columns=names).copy()
+    # LinkColumn uses the URL's final unescaped Chinese label as its visible text.
+    # The actual navigation target remains the stock-analysis query string.
+    editor["股票名稱"] = [
+        stock_url(m, code) + "&股票=" + str(name)
+        for m, code, name in zip(shown["market"], shown["code"], shown["name"])
+    ]
     editor_key = "watch_editor_only" if st.session_state.get("watch_only", False) else "watch_editor_ranking"
     edited = st.data_editor(
         editor, hide_index=True, use_container_width=True,
@@ -317,6 +323,7 @@ def render_ranking_table(df, count):
         column_config={
             "加入自選": st.column_config.CheckboxColumn("加入自選", help="勾選後按下方加入按鈕"),
             "查看分析": st.column_config.LinkColumn("個股分析", display_text="查看圖表"),
+            "股票名稱": st.column_config.LinkColumn("股票名稱（點擊看圖表）", display_text=r"股票=(.*)$"),
             "收盤價": st.column_config.NumberColumn("收盤價", format="%.2f"),
             "漲跌幅%": st.column_config.NumberColumn("漲跌幅%", format="%+.2f")
         }
@@ -846,7 +853,7 @@ with tab_radar:
                 index=1
             )
 
-        st.caption("勾選左欄後按「加入勾選股票」；點選右側「查看圖表」開啟個股分析。")
+        st.caption("勾選左欄加入自選；直接點擊藍色股票名稱即可查看 K 線圖表。")
 
         render_ranking_table(data, count)
 

@@ -1,0 +1,19 @@
+name: V2.7.4 股票名稱連結與 MA240 回補測試
+on:
+  push:
+    branches: [feature/v274-extrema-ma240-backfill]
+  pull_request:
+    branches: [main]
+permissions:
+  contents: read
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: pip install 'pandas>=2.1,<3'
+      - run: python -m compileall -q app.py pages technical_charts.py backfill_ma240.py
+      - run: python -m unittest discover -s tests -p 'test_v274.py' -v

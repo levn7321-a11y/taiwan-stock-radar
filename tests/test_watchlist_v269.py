@@ -35,13 +35,13 @@ class WatchlistTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as root:
             db = Path(root) / "twstock.sqlite3"
             with sqlite3.connect(db) as conn:
-                conn.execute("CREATE TABLE daily (date TEXT, market TEXT, code TEXT, name TEXT, close REAL, volume INTEGER)")
+                conn.execute("CREATE TABLE daily (date TEXT, market TEXT, code TEXT, name TEXT, open REAL, high REAL, low REAL, close REAL, volume INTEGER)")
                 conn.execute("CREATE TABLE institutional (date TEXT, market TEXT, code TEXT, foreign_net INTEGER, trust_net INTEGER, dealer_net INTEGER)")
-                conn.executemany("INSERT INTO daily VALUES (?, ?, ?, ?, ?, ?)", [
-                    ("2026-11-05", "上市", "2330", "台積電", 1000, 8000),
-                    ("2026-11-06", "上市", "2330", "台積電", 1050, 9000),
-                    ("2026-11-06", "上市", "2317", "鴻海", 200, 2000),
-                    ("2026-11-06", "上櫃", "6488", "環球晶", 400, 3000)])
+                conn.executemany("INSERT INTO daily VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)", [
+                    ("2026-11-05", "上市", "2330", "台積電", 995, 1010, 990, 1000, 8000),
+                    ("2026-11-06", "上市", "2330", "台積電", 1040, 1060, 1030, 1050, 9000),
+                    ("2026-11-06", "上市", "2317", "鴻海", 198, 205, 195, 200, 2000),
+                    ("2026-11-06", "上櫃", "6488", "環球晶", 398, 402, 393, 400, 3000)])
                 conn.executemany("INSERT INTO institutional VALUES (?, ?, ?, ?, ?, ?)", [
                     ("2026-11-06", "上市", "2330", 10000, -2000, 500),
                     ("2026-11-06", "上市", "2317", 20000, 0, 0)])

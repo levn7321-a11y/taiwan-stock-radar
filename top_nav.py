@@ -176,6 +176,17 @@ def _save_theme():
     st.query_params["theme"] = "light" if st.session_state["radar_light_theme"] else "dark"
 
 
+@st.cache_data(ttl=900, max_entries=2)
+def _searchable_stocks(db_path, stamp):
+    with sqlite3.connect(db_path) as conn:
+        return conn.execute(
+            """SELECT market,code,MAX(name) FROM daily
+               WHERE date = (SELECT MAX(date) FROM daily)
+                 AND market IN ('上市','上櫃')
+               GROUP BY market,code ORDER BY code"""
+        ).fetchall()
+
+
 def show_top_nav(*, restore_db=True):
     """上方六個浮動分類與跨頁保留的黑／白模式。"""
     if restore_db:
@@ -202,11 +213,7 @@ def show_top_nav(*, restore_db=True):
                 db = Path(__file__).resolve().parent / "twstock.sqlite3"
                 try:
                     if db.exists():
-                        with sqlite3.connect(db) as conn:
-                            stocks = conn.execute(
-                                "SELECT market,code,MAX(name) FROM daily "
-                                "WHERE market IN ('上市','上櫃') GROUP BY market,code ORDER BY code"
-                            ).fetchall()
+                        stocks = _searchable_stocks(str(db), db.stat().st_mtime_ns)
                     else:
                         stocks = []
                 except sqlite3.Error:

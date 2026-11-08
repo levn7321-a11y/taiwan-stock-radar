@@ -211,13 +211,13 @@ board["查看圖表"] = [
         "watch": ",".join(selected),
         "theme": "light" if st.session_state.get("radar_light_theme", True) else "dark",
         "股票": str(row["名稱"]),
-    })
+    }) + "#" + str(row["名稱"])
     for _, row in board.iterrows()
 ]
 board["名稱"] = board["查看圖表"]
 st.dataframe(board, use_container_width=True, hide_index=True,
              column_config={
-                 "名稱": st.column_config.LinkColumn("股票名稱（點擊看圖表）", display_text=r"股票=([^&]+)"),
+                 "名稱": st.column_config.LinkColumn("股票名稱（點擊看圖表）", display_text=r"#(.+)$"),
                  "查看圖表": None,
                  "收盤價": st.column_config.NumberColumn("收盤價", format="%.2f"),
                  "漲跌幅%": st.column_config.NumberColumn("漲跌幅%", format="%+.2f"),

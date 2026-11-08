@@ -71,7 +71,7 @@ def scan(df, min_turnover=5000000, vol_multiple=1.8, breakout_days=20):
 
 
 st.set_page_config(page_title='台股 AI 突破雷達 V2.0', layout='wide', initial_sidebar_state='collapsed')
-show_top_nav()
+show_top_nav(restore_db=False)
 
 show_market_indices()
 st.title('📈 台股 AI 突破雷達 V2.0')
@@ -143,41 +143,47 @@ def load_home_scan(db_stamp):
             ORDER BY market,code,date
         """, conn)
 
-from storage import DB as LOCAL_DB
-df = load_home_scan(LOCAL_DB.stat().st_mtime_ns)
-a, b, c = st.columns(3)
-a.metric('已存股票數', df[['market', 'code']].drop_duplicates().shape[0] if len(df) else 0)
-b.metric('已存交易日期數', df.date.nunique() if len(df) else 0)
-c.metric('最新資料日期', df.date.max() if len(df) else '尚無')
-if df.empty:
-    st.warning('尚無資料。請先按左側「抓取官方最新收盤行情」，或匯入歷史 CSV。')
-else:
-    latest = df.date.max()
-    counts = df.groupby(['market', 'code']).date.nunique()
-    eligible = int((counts >= 61).sum())
-    st.caption(f'可計算完整60日歷史訊號的股票：{eligible} 檔。最新收盤日：{latest}。不同市場若日期不一致，請留意資料新鮮度。')
-    if eligible == 0:
-        st.warning('歷史資料不足：目前不顯示突破排行榜，避免把單日上漲誤認為突破。')
+st.subheader("📡 短線突破掃描")
+if st.button("🔍 開始掃描行情", type="primary", key="home_scan_start"):
+    st.session_state["home_scan_enabled"] = True
+if st.session_state.get("home_scan_enabled", False):
+    from storage import DB as LOCAL_DB
+    df = load_home_scan(LOCAL_DB.stat().st_mtime_ns)
+    a, b, c = st.columns(3)
+    a.metric('已存股票數', df[['market', 'code']].drop_duplicates().shape[0] if len(df) else 0)
+    b.metric('已存交易日期數', df.date.nunique() if len(df) else 0)
+    c.metric('最新資料日期', df.date.max() if len(df) else '尚無')
+    if df.empty:
+        st.warning('尚無資料。請先按左側「抓取官方最新收盤行情」，或匯入歷史 CSV。')
     else:
-        result = scan(df, min_turnover * 10000, vol_multiple)
-        if not result.empty:
-            result = result[result['日期'] == latest]
-        if result.empty:
-            st.info('目前沒有符合篩選條件的股票。')
+        latest = df.date.max()
+        counts = df.groupby(['market', 'code']).date.nunique()
+        eligible = int((counts >= 61).sum())
+        st.caption(f'可計算完整60日歷史訊號的股票：{eligible} 檔。最新收盤日：{latest}。不同市場若日期不一致，請留意資料新鮮度。')
+        if eligible == 0:
+            st.warning('歷史資料不足：目前不顯示突破排行榜，避免把單日上漲誤認為突破。')
         else:
-            market_filter = st.multiselect('市場', ['上市', '上櫃'], default=['上市', '上櫃'])
-            only_breakout = st.checkbox('只看20日／60日突破', value=False)
-            result = result[result['市場'].isin(market_filter)]
-            if only_breakout:
-                result = result[result['突破20日'] | result['突破60日']]
-            st.subheader(f'異動排行榜（{len(result)} 檔）')
-            st.dataframe(result, use_container_width=True, hide_index=True)
-            st.download_button('下載排行榜 CSV', result.to_csv(index=False).encode('utf-8-sig'), 'breakout_rank.csv', 'text/csv')
-            if len(result):
-                code = st.selectbox('個股走勢', result['代號'].tolist(), format_func=lambda x: f"{x} {result.loc[result['代號'] == x, '名稱'].iloc[0]}")
-                r = result[result['代號'] == code].iloc[0]
-                g = df[(df.code == code) & (df.market == r['市場'])].sort_values('date').tail(100)
-                st.line_chart(g.set_index('date')[['close']])
-                st.write(f"量比 {r['量比']} 倍；20日突破：{'是' if r['突破20日'] else '否'}；60日突破：{'是' if r['突破60日'] else '否'}；風險：{r['風險提示']}")
+            result = scan(df, min_turnover * 10000, vol_multiple)
+            if not result.empty:
+                result = result[result['日期'] == latest]
+            if result.empty:
+                st.info('目前沒有符合篩選條件的股票。')
+            else:
+                market_filter = st.multiselect('市場', ['上市', '上櫃'], default=['上市', '上櫃'])
+                only_breakout = st.checkbox('只看20日／60日突破', value=False)
+                result = result[result['市場'].isin(market_filter)]
+                if only_breakout:
+                    result = result[result['突破20日'] | result['突破60日']]
+                st.subheader(f'異動排行榜（{len(result)} 檔）')
+                st.dataframe(result, use_container_width=True, hide_index=True)
+                st.download_button('下載排行榜 CSV', result.to_csv(index=False).encode('utf-8-sig'), 'breakout_rank.csv', 'text/csv')
+                if len(result):
+                    code = st.selectbox('個股走勢', result['代號'].tolist(), format_func=lambda x: f"{x} {result.loc[result['代號'] == x, '名稱'].iloc[0]}")
+                    r = result[result['代號'] == code].iloc[0]
+                    g = df[(df.code == code) & (df.market == r['市場'])].sort_values('date').tail(100)
+                    st.line_chart(g.set_index('date')[['close']])
+                    st.write(f"量比 {r['量比']} 倍；20日突破：{'是' if r['突破20日'] else '否'}；60日突破：{'是' if r['突破60日'] else '否'}；風險：{r['風險提示']}")
+else:
+    st.info("首頁已載入。需要查看突破、量能及異動排行時，請按「開始掃描行情」；個股 MA240 仍可由上方選單查看完整歷史。")
 st.divider()
 

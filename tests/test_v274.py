@@ -32,8 +32,8 @@ class V274Tests(unittest.TestCase):
         source = (ROOT / "backfill_v26.py").read_text(encoding="utf-8")
         workflow = (ROOT / ".github/workflows/backfill_v26.yml").read_text(encoding="utf-8")
         self.assertIn("timedelta(days=450)", source)
-        self.assertIn("default: \"60\"", workflow)
-        self.assertIn("github.event.inputs.days || '60'", workflow)
+        self.assertIn("default: \"90\"", workflow)
+        self.assertIn("github.event.inputs.days || '90'", workflow)
 
 
 if __name__ == "__main__":

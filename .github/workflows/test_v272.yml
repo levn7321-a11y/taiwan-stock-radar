@@ -1,0 +1,19 @@
+name: V2.7.2 K線與指標副圖測試
+on:
+  push:
+    branches: [feature/v272-candles-indicator-panels]
+  pull_request:
+    branches: [main]
+permissions:
+  contents: read
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: pip install 'pandas>=2.1,<3' 'altair>=5,<7'
+      - run: python -m compileall -q pages app.py price_periods.py technical_charts.py
+      - run: python -m unittest discover -s tests -p 'test_v272.py' -v

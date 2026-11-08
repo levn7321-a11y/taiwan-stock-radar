@@ -1,0 +1,19 @@
+name: 網站崩潰修復與 MA240 記憶體測試
+on:
+  push:
+    branches: [fix/streamlit-startup-memory-after-history]
+  pull_request:
+    branches: [main]
+permissions:
+  contents: read
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: pip install 'pandas>=2.1,<3'
+      - run: python -m compileall -q app.py pages ranking_snapshot.py
+      - run: python -m unittest discover -s tests -p 'test_startup_memory.py' -v

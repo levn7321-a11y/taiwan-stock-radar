@@ -1,12 +1,44 @@
 
-[server]
-headless = true
+# 排行榜右上角顯示筆數
+left, right = st.columns([5, 1.2])
 
-[theme]
-base = "dark"
-primaryColor = "#E63946"
-backgroundColor = "#0E1525"
-secondaryBackgroundColor = "#172238"
-textColor = "#F1F5F9"
-font = "sans serif"
-  
+with left:
+    st.subheader("🏆 全市場均線排行榜")
+
+with right:
+    display_count = st.selectbox(
+        "顯示檔數",
+        options=[10, 20, 50],
+        index=1
+    )
+
+# 根據顯示筆數調整字體
+font_size = {
+    10: 16,
+    20: 14,
+    50: 13
+}[display_count]
+
+st.markdown(
+    f"""
+    <style>
+    div[data-testid="stDataFrame"] {{
+        font-size: {font_size}px;
+    }}
+    </style>
+    """,
+    unsafe_allow_html=True
+)
+
+# 排行榜只顯示選取筆數
+display_df = ranking_df.head(display_count)
+
+st.dataframe(
+    display_df,
+    use_container_width=True,
+    hide_index=True,
+    height=min(
+        760,
+        40 + display_count * 35
+    )
+)

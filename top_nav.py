@@ -1,5 +1,6 @@
 """共用上方浮動導覽與黑／白模式。使用 Streamlit 原生元件以保留跨頁 session_state。"""
 import streamlit as st
+from runtime_db import ensure_db
 import sqlite3
 from pathlib import Path
 
@@ -177,6 +178,11 @@ def _save_theme():
 
 def show_top_nav():
     """上方六個浮動分類與跨頁保留的黑／白模式。"""
+    try:
+        ensure_db()
+    except (OSError, ValueError, __import__("sqlite3").DatabaseError) as exc:
+        st.error(f"載入完整歷史資料庫失敗：{exc}")
+        st.stop()
     if "radar_light_theme" not in st.session_state:
         st.session_state["radar_light_theme"] = st.query_params.get("theme", "light") != "dark"
     elif st.query_params.get("theme") in ("light", "dark"):

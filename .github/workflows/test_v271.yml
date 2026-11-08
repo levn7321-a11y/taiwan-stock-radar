@@ -1,0 +1,19 @@
+name: V2.7.1 主題與週期驗證
+on:
+  push:
+    branches: [fix/v271-theme-nav-period]
+  pull_request:
+    branches: [main]
+permissions:
+  contents: read
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: pip install 'pandas>=2.1,<3'
+      - run: python -m compileall -q app.py pages top_nav.py price_periods.py
+      - run: python -m unittest discover -s tests -p 'test_v271.py' -v

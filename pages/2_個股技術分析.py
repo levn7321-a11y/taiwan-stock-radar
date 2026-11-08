@@ -6,6 +6,7 @@ import pandas as pd
 import requests
 import streamlit as st
 from top_nav import show_top_nav
+from price_periods import convert_price_period, chart_tail_count
 
 st.set_page_config(
     page_title="個股技術分析",
@@ -255,20 +256,15 @@ st.caption(
     f"歷史交易日：{len(df)}"
 )
 
+timeframe = st.segmented_control("K 線週期", ["日線", "週線", "月線"], default="日線")
 period = st.radio(
     "觀察期間",
     ["3個月", "6個月", "1年", "全部"],
     horizontal=True
 )
-
-days = {
-    "3個月": 65,
-    "6個月": 130,
-    "1年": 260,
-    "全部": len(df)
-}
-
-chart = df.tail(days[period]).set_index("date")
+chart_source = convert_price_period(df, timeframe or "日線")
+chart = chart_source.tail(chart_tail_count(timeframe or "日線", period, len(chart_source)))
+st.caption(f"目前顯示：{timeframe or '日線'}｜週／月線均線依各週／各月收盤重新計算。")
 
 st.subheader("📊 股價與均線")
 st.line_chart(

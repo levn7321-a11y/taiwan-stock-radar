@@ -8,6 +8,7 @@ import pandas as pd
 import altair as alt
 import streamlit as st
 from top_nav import show_top_nav
+from period_utils import resample_price_timeframe, add_period_moving_averages
 
 st.set_page_config(
     page_title="台股 AI 突破雷達 V2.6.8",
@@ -25,7 +26,7 @@ st.markdown("""
 <style>
 .block-container {
     max-width: 100%;
-    padding: 1rem 1.3rem 2rem;
+    padding: 5.5rem 1.3rem 2rem;
 }
 h1 {font-size: 1.85rem !important}
 div[data-testid="stMetric"] {
@@ -426,6 +427,12 @@ def render_stock_analysis(market, code, name, inst):
         f"｜有效交易日：{len(s)}"
     )
 
+    bar_period = st.segmented_control(
+        "K 線週期",
+        ["日線", "週線", "月線"],
+        default="日線",
+        key=f"bar_period_{market}_{code}"
+    )
     period = st.radio(
         "觀察期間",
         ["3個月", "6個月", "1年", "全部"],
@@ -433,15 +440,17 @@ def render_stock_analysis(market, code, name, inst):
         horizontal=True,
         key=f"period_{market}_{code}"
     )
-
-    days = {
-        "3個月": 65,
-        "6個月": 130,
-        "1年": 260,
-        "全部": len(s)
-    }
-
-    show = s.tail(days[period])
+    chart_source = add_period_moving_averages(
+        resample_price_timeframe(s[["close", "volume"]], bar_period), MA
+    )
+    if period == "全部":
+        show = chart_source
+    else:
+        months = {"3個月": 3, "6個月": 6, "1年": 12}[period]
+        show = chart_source.loc[
+            chart_source.index >= chart_source.index.max() - pd.DateOffset(months=months)
+        ]
+    st.caption(f"目前為{bar_period}，均線均以該 K 線週期計算；週／月線最後一根可能尚未收完整。")
 
     st.subheader("📉 股價與技術均線")
 
@@ -476,7 +485,7 @@ def render_stock_analysis(market, code, name, inst):
                 scale=alt.Scale(
                     domain=lines,
                     range=[
-                        "#ffffff", "#f6bf54",
+                        "#3689e8", "#f6bf54",
                         "#58c6f5", "#d77df1",
                         "#43c59e", "#ef6576"
                     ]

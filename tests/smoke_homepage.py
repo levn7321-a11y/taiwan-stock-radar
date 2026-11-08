@@ -16,3 +16,15 @@ for exception in app.exception:
 if app.exception:
     sys.exit(1)
 print("HOME_TEST_SUCCESS",len(app.title),len(app.metric))
+
+# First paint must not unpack the 240-day history; analysis pages load it on demand.
+from runtime_db import MARKER
+assert not MARKER.exists(), "Homepage eagerly restored full 240-day archive"
+print("HOME_LAZY_DB_OK")
+app.button(key="home_scan_start").click().run()
+print("HOME_SCAN_EXCEPTION_COUNT", len(app.exception))
+for exception in app.exception:
+    print(exception.message, file=sys.stderr)
+if app.exception:
+    sys.exit(1)
+print("HOME_SCAN_SUCCESS",len(app.metric))

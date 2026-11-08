@@ -20,7 +20,7 @@ def load_data(path, stamp):
     with sqlite3.connect(path) as c:
         dates = pd.read_sql_query("SELECT DISTINCT market,date FROM daily WHERE market IN ('上市','上櫃')", c)
         inst = pd.read_sql_query("""SELECT date,market,code,name,foreign_net,trust_net,dealer_net
-           FROM institutional WHERE market IN ('上市','上櫃')""", c, dtype={"code":str})
+           FROM institutional WHERE market IN ('上市','上櫃') AND date >= (SELECT MIN(date) FROM (SELECT DISTINCT date FROM daily ORDER BY date DESC LIMIT 35))""", c, dtype={"code":str})
     for d in (dates, inst):
         d["date"] = pd.to_datetime(d["date"], errors="coerce").dt.normalize()
     inst["code"] = inst["code"].astype(str).str.strip()

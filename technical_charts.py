@@ -93,9 +93,12 @@ def chart_view(bars, panel, frequency="日線", inst=None, calendar=None):
     primary=alt.layer(*layers).properties(height=355,title="紅漲綠跌｜日／週／月 K 線與移動平均線")
     warning = ""
     if panel=="成交量":
-        bottom = base.mark_bar(size=10).encode(x=xt,
+        volumes = base.mark_bar(size=10).encode(x=xt,
             y=alt.Y("volume:Q",title="成交量（股）"),color=color,
             tooltip=[alt.Tooltip("日期:N"),alt.Tooltip("volume:Q",format=",.0f")])
+        numbers = alt.Chart(df.tail(7)).mark_text(dy=-9,fontSize=10).encode(
+            x=xt,y="volume:Q",text=alt.Text("volume:Q",format=",.0f"),color=color)
+        bottom = alt.layer(volumes,numbers)
     elif panel=="KD線":
         valid=df.dropna(subset=["K","D"])
         if valid.empty:
@@ -120,11 +123,17 @@ def chart_view(bars, panel, frequency="日線", inst=None, calendar=None):
             joined["方向"]=joined[key].map(lambda v: "買超" if pd.notna(v) and v>0 else "賣超" if pd.notna(v) and v<0 else "持平")
             if joined[key].notna().sum()==0:
                 warning="所選期間無完整法人紀錄，缺資料不視為 0"
-            bottom=alt.Chart(joined).mark_bar(size=10).encode(
+            direction_color = alt.Color("方向:N",scale=alt.Scale(domain=["買超","賣超","持平"],
+                               range=[RED,GREEN,FLAT]),legend=None)
+            bars = alt.Chart(joined).mark_bar(size=10).encode(
                 x=xt,y=alt.Y(f"{key}:Q",title=f"{key}（張）"),
-                color=alt.Color("方向:N",scale=alt.Scale(domain=["買超","賣超","持平"],
-                               range=[RED,GREEN,FLAT]),legend=None),
+                color=direction_color,
                 tooltip=[alt.Tooltip("日期:N"),alt.Tooltip(f"{key}:Q",format="+,.0f")])
+            label_data = joined.dropna(subset=[key]).tail(7)
+            numbers = alt.Chart(label_data).mark_text(dy=-9,fontSize=10).encode(
+                x=xt,y=alt.Y(f"{key}:Q"),
+                text=alt.Text(f"{key}:Q",format="+,.0f"),color=direction_color)
+            bottom = alt.layer(bars,numbers)
     combined=alt.vconcat(primary,bottom.properties(height=145,title=panel),
                          spacing=5).resolve_scale(x="shared",y="independent")
     return combined, warning

@@ -2,5 +2,11 @@
 [server]
 headless = true
 
-[client]
-showSidebarNavigation = true
+[theme]
+base = "dark"
+primaryColor = "#E63946"
+backgroundColor = "#0E1525"
+secondaryBackgroundColor = "#172238"
+textColor = "#F1F5F9"
+font = "sans serif"
+  

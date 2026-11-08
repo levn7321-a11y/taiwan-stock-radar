@@ -39,7 +39,18 @@ def _theme_css(light):
     [data-testid="stApp"] h2, [data-testid="stApp"] h3,
     [data-testid="stApp"] label, [data-testid="stApp"] span,
     [data-testid="stSidebar"] p, [data-testid="stSidebar"] label {{
-      color: {text};
+      color: {text} !important;
+    }}
+    [data-testid="stApp"] [data-testid="stMarkdownContainer"],
+    [data-testid="stApp"] [data-testid="stMarkdownContainer"] li,
+    [data-testid="stApp"] [data-testid="stMarkdownContainer"] strong,
+    [data-testid="stApp"] [data-testid="stWidgetLabel"],
+    [data-testid="stApp"] [data-testid="stPopover"] button,
+    [data-testid="stApp"] [data-testid="stPageLink"] a {{
+      color: {text} !important;
+    }}
+    [data-testid="stApp"] .block-container {{
+      padding-top: 5.5rem !important;
     }}
     [data-testid="stApp"] small, [data-testid="stApp"] .stCaption {{
       color: {muted} !important;
@@ -66,12 +77,13 @@ def _theme_css(light):
     }}
     .st-key-radar_top_nav {{
       position: sticky;
-      top: 0;
-      z-index: 999;
+      top: 3.75rem;
+      z-index: 90;
       background: {panel};
       border: 1px solid {border};
       border-radius: 12px;
-      padding: 10px 14px 3px;
+      padding: 12px 14px 10px;
+      min-height: 64px;
       margin-bottom: 16px;
       box-shadow: 0 8px 25px rgba(5, 15, 35, .10);
     }}
@@ -94,6 +106,9 @@ def _theme_css(light):
       color: {text} !important;
       white-space: nowrap;
     }}
+    [data-testid="stPopoverBody"], [data-testid="stPopoverBody"] * {{
+      color: {text} !important;
+    }}
     [data-testid="stPopoverBody"] {{
       border: 1px solid {border};
       background: {panel};
@@ -103,18 +118,26 @@ def _theme_css(light):
     """
 
 
+def _update_theme_preference():
+    """切換先寫入非 Widget 狀態，避免跨頁時 Streamlit 清理 Widget key。"""
+    st.session_state["radar_theme_preference"] = bool(st.session_state["_radar_theme_toggle"])
+
+
 def show_top_nav():
-    """置頂 HODA 風格主選單。點開即出現浮動選單，不佔用頁面內容。"""
-    if "radar_light_theme" not in st.session_state:
-        st.session_state["radar_light_theme"] = False
-    st.markdown(_theme_css(bool(st.session_state["radar_light_theme"])), unsafe_allow_html=True)
+    """置頂浮動選單與跨頁保存的黑白色系。"""
+    if "radar_theme_preference" not in st.session_state:
+        st.session_state["radar_theme_preference"] = False
+    # Streamlit 切換頁面時會清理前頁 Widget 的 key。非 Widget 的 preference 保持不變。
+    st.session_state["_radar_theme_toggle"] = bool(st.session_state["radar_theme_preference"])
+    st.markdown(_theme_css(bool(st.session_state["radar_theme_preference"])), unsafe_allow_html=True)
     with st.container(key="radar_top_nav"):
-        cols = st.columns([1, 1, 1.2, 1, 1, 1, 1.05], gap="small", vertical_alignment="center")
+        cols = st.columns([1, 1, 1.2, 1, 1, 1, 1.15], gap="small", vertical_alignment="center")
         for col, (title, links) in zip(cols, MENUS):
             with col:
                 with st.popover(title, use_container_width=True):
                     for label, path in links:
                         st.page_link(path, label=label, use_container_width=True)
         with cols[-1]:
-            st.toggle("☀️ 白底模式", key="radar_light_theme", help="關閉為黑底模式；切換後立即套用。")
-    st.caption("點選上方選單展開功能；黑／白模式於本次瀏覽階段保留。")
+            st.toggle("☀️ 白底模式", key="_radar_theme_toggle",
+                      on_change=_update_theme_preference,
+                      help="開啟為白底；關閉為黑底。")

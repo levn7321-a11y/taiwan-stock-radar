@@ -7,7 +7,7 @@ import pandas as pd
 import requests
 import streamlit as st
 
-from storage import init_db, save, load, fetch_latest, FIELDS
+from storage import init_db, save, fetch_latest, FIELDS
 from history import backfill, day
 from top_nav import show_top_nav
 from market_indices import show_market_indices
@@ -126,7 +126,25 @@ with st.sidebar:
     vol_multiple = st.slider('爆量門檻（20日均量倍數）', 1.0, 5.0, 1.8, .1)
     st.info('首次只抓最新一天，需累積至少61個交易日，或匯入歷史資料，才能計算完整突破訊號。')
 
-df = load()
+# Use only the latest 100 MARKET dates for the home scanner. The full 240+/260-day
+# history remains stored for individual MA240 analysis; loading it all into the
+# landing page previously caused large memory spikes on Streamlit Cloud.
+@st.cache_data(ttl=900, max_entries=2)
+def load_home_scan(db_stamp):
+    from storage import DB
+    with sqlite3.connect(DB) as conn:
+        return pd.read_sql_query("""
+            SELECT date,market,code,name,open,high,low,close,volume FROM daily
+            WHERE date >= (
+                SELECT MIN(date) FROM (
+                    SELECT DISTINCT date FROM daily ORDER BY date DESC LIMIT 100
+                )
+            )
+            ORDER BY market,code,date
+        """, conn)
+
+from storage import DB as LOCAL_DB
+df = load_home_scan(LOCAL_DB.stat().st_mtime_ns)
 a, b, c = st.columns(3)
 a.metric('已存股票數', df[['market', 'code']].drop_duplicates().shape[0] if len(df) else 0)
 b.metric('已存交易日期數', df.date.nunique() if len(df) else 0)

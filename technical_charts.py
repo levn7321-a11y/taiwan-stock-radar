@@ -85,6 +85,33 @@ def chart_view(bars, panel, frequency="日線", inst=None, calendar=None):
                   y2="high:Q",color=color,tooltip=tooltips)
     body = base.mark_bar(size=9).encode(x=xt,y="棒底:Q",y2="棒頂:Q",color=color,tooltip=tooltips)
     layers=[wick,body]
+    # Mark the highest intraperiod high and lowest intraperiod low on the visible chart.
+    # These are actual OHLC values from the selected time window, not estimates.
+    if df["high"].notna().any() and df["low"].notna().any():
+        peak = df.loc[[df["high"].idxmax()]].copy()
+        trough = df.loc[[df["low"].idxmin()]].copy()
+        peak["極值標籤"] = peak["high"].map(lambda v: f"最高 {v:,.2f}")
+        trough["極值標籤"] = trough["low"].map(lambda v: f"最低 {v:,.2f}")
+        layers.append(
+            alt.Chart(peak).mark_point(filled=True, size=75, color="#e11d48")
+            .encode(x=xt, y=alt.Y("high:Q"))
+        )
+        layers.append(
+            alt.Chart(peak).mark_text(align="center", baseline="bottom",
+                                      dy=-11, fontSize=13, fontWeight="bold",
+                                      color="#e11d48")
+            .encode(x=xt, y=alt.Y("high:Q"), text="極值標籤:N")
+        )
+        layers.append(
+            alt.Chart(trough).mark_point(filled=True, size=75, color="#059669")
+            .encode(x=xt, y=alt.Y("low:Q"))
+        )
+        layers.append(
+            alt.Chart(trough).mark_text(align="center", baseline="top",
+                                        dy=11, fontSize=13, fontWeight="bold",
+                                        color="#059669")
+            .encode(x=xt, y=alt.Y("low:Q"), text="極值標籤:N")
+        )
     ma_colors = {"MA5":"#e4c334","MA10":"#54d1ee","MA20":"#b57cf2","MA60":"#55c2a9","MA240":"#ee8fa7"}
     for col,hue in ma_colors.items():
         if col in df and df[col].notna().any():

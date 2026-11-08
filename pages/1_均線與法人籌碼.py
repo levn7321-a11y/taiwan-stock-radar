@@ -2,17 +2,28 @@ import sqlite3
 from pathlib import Path
 import pandas as pd
 import streamlit as st
+import altair as alt
 
-st.set_page_config(page_title="台股 AI 突破雷達 V2.2", page_icon="📈", layout="wide", initial_sidebar_state="collapsed")
+st.set_page_config(page_title="台股 AI 突破雷達 V2.3", page_icon="📈", layout="wide", initial_sidebar_state="collapsed")
 DB = Path(__file__).resolve().parents[1] / "twstock.sqlite3"
 MA = (5, 10, 20, 60, 240)
 
 st.markdown("""
 <style>
-.block-container {max-width: 100%; padding-top: 1.1rem; padding-left: 2rem; padding-right: 2rem}
-h1 {font-size: 2rem !important}
-div[data-testid="stMetric"] {border: 1px solid rgba(130,140,155,.22); border-radius: 12px; padding: 12px}
-div[data-testid="stDataFrame"] {border-radius: 10px}
+.block-container {max-width:100%;padding:1rem 1.5rem 2rem}
+header[data-testid="stHeader"] {background:transparent}
+h1 {font-size:1.9rem!important;letter-spacing:.02em}
+div[data-testid="stMetric"] {border:1px solid #394554;border-radius:7px;padding:12px;background:#17212d}
+div[data-testid="stMetric"] label {color:#a7b6c9!important}
+div[data-testid="stMetricValue"] {color:#f2f6fc}
+div[data-testid="stDataFrame"] {border:1px solid #354354;border-radius:6px}
+.stTabs [data-baseweb="tab-list"] {gap:5px;border-bottom:1px solid #405064}
+.stTabs [data-baseweb="tab"] {padding:10px 20px;border-radius:5px 5px 0 0}
+.stTabs [aria-selected="true"] {background:#213448}
+section[data-testid="stSidebar"] {background:#111c28}
+.market-header {background:linear-gradient(90deg,#172a3e,#203a50);padding:12px 16px;border-left:4px solid #2aa6c9;border-radius:4px;margin-bottom:12px}
+.market-header b {font-size:1.1rem;color:#eaf4ff}
+.market-header small {color:#9eb4c9}
 </style>
 """, unsafe_allow_html=True)
 
@@ -50,9 +61,9 @@ def style_change(v):
     if pd.isna(v): return ""
     return "color: #e74b58; font-weight: bold" if v > 0 else ("color: #15a36c; font-weight: bold" if v < 0 else "")
 
-st.title("📈 台股 AI 突破雷達 V2.2")
-st.caption("全頁寬排行榜｜均線趨勢｜外資、投信籌碼｜台灣市場紅漲綠跌｜非即時報價、非投資建議")
-tab_radar, tab_ma, tab_inst = st.tabs(["🏆 全市場均線排行榜", "📉 個股均線分析", "🏦 法人買賣超排行"])
+st.title("📈 台股 AI 突破雷達 V2.3｜專業看盤")
+st.caption("台股行情看板｜紅漲綠跌｜均線趨勢｜法人籌碼｜非即時報價・非投資建議")
+tab_radar, tab_ma, tab_inst = st.tabs(["📊 行情總覽與排行榜", "📈 個股技術分析", "🏦 法人籌碼排行榜"])
 
 prices = pd.DataFrame()
 if DB.exists():
@@ -92,12 +103,13 @@ def build_ranking(prices):
 ranking = build_ranking(prices)
 
 with tab_radar:
+    st.markdown('<div class="market-header"><b>市場行情總覽</b><br><small>全市場個股行情與技術指標・依資料庫最近交易日計算</small></div>', unsafe_allow_html=True)
     if ranking.empty:
         st.info("目前沒有可用的行情資料。")
     else:
         c1, c2, c3, c4 = st.columns([1.2, 1.2, 1.2, 1.5])
         with c1: market = st.selectbox("市場", ["上市＋上櫃", "上市", "上櫃"], key="rank_market")
-        with c2: sort = st.selectbox("排序", ["漲跌幅%", "量比", "多頭均線數", "成交量"], key="rank_sort")
+        with c2: sort = st.selectbox("排行榜", ["漲幅排行", "跌幅排行", "成交量排行", "量比排行", "多頭排列排行"], key="rank_sort")
         with c3: trend = st.selectbox("均線條件", ["全部", "站上月線", "站上月季線"], key="rank_trend")
         with c4: keyword = st.text_input("搜尋代號／名稱", placeholder="例如 2330 或 台積電")
         d = market_filter(ranking, market).copy()
@@ -108,19 +120,26 @@ with tab_radar:
         if keyword:
             d = d[d["code"].str.contains(keyword, case=False, regex=False) |
                   d["name"].astype(str).str.contains(keyword, case=False, regex=False)]
-        d = d.sort_values(sort, ascending=False, na_position="last")
+        sort_key, ascending = {
+            "漲幅排行": ("漲跌幅%", False), "跌幅排行": ("漲跌幅%", True),
+            "成交量排行": ("volume", False), "量比排行": ("量比", False),
+            "多頭排列排行": ("多頭均線數", False)
+        }[sort]
+        d = d.sort_values(sort_key, ascending=ascending, na_position="last")
         latest_date = ranking["date"].max().date()
-        m1, m2, m3, m4 = st.columns(4)
+        m1, m2, m3, m4, m5 = st.columns(5)
         m1.metric("篩選結果", f"{len(d):,} 檔")
-        m2.metric("站上月線", f"{int((d['close'] > d['MA20']).sum()):,} 檔")
-        m3.metric("站上季線", f"{int((d['close'] > d['MA60']).sum()):,} 檔")
-        m4.metric("行情最新日期", str(latest_date))
+        m2.metric("上漲家數", f"{int((d['漲跌幅%'] > 0).sum()):,} 檔")
+        m3.metric("下跌家數", f"{int((d['漲跌幅%'] < 0).sum()):,} 檔")
+        m4.metric("站上月線", f"{int((d['close'] > d['MA20']).sum()):,} 檔")
+        m5.metric("行情最新日期", str(latest_date))
         st.caption("每檔顯示自己的最新交易日；各市場更新時間可能不同。量比＝當日成交量／20 日平均成交量。")
         view = d.rename(columns={"date":"日期","market":"市場","code":"代號","name":"名稱",
                                  "close":"收盤價","volume":"成交量"})
         cols = ["日期","市場","代號","名稱","收盤價","漲跌幅%","成交量","量比",
                 "MA5","MA10","MA20","MA60","MA240","多頭均線數","均線訊號"]
         view = view[cols]
+        view["日期"] = pd.to_datetime(view["日期"]).dt.strftime("%Y-%m-%d")
         st.dataframe(view.style.map(style_change, subset=["漲跌幅%"]).format(
             {"收盤價":"{:.2f}","漲跌幅%":"{:+.2f}","成交量":"{:,.0f}","量比":"{:.2f}",
              **{f"MA{n}":"{:.2f}" for n in MA}}, na_rep="—"),
@@ -128,7 +147,7 @@ with tab_radar:
         st.download_button("⬇️ 下載目前排行榜 CSV",
                            data=view.to_csv(index=False).encode("utf-8-sig"),
                            file_name="taiwan_stock_ma_ranking.csv", mime="text/csv")
-        st.caption("本頁是均線與量能排行榜，不等同原 V2.0 的 20／60 日突破評分榜。")
+        st.caption("行情排行為研究用途，並非原 V2.0 突破評分榜。240 日年線若資料不足將顯示空白。")
 
 with tab_ma:
     if ranking.empty:
@@ -144,13 +163,34 @@ with tab_ma:
         s = s.sort_values("date").set_index("date")
         for n in MA: s[f"MA{n}"] = s["close"].rolling(n, min_periods=n).mean()
         st.caption(f"資料最新日期：{s.index.max().date()}｜累積 {len(s)} 個交易日")
-        st.line_chart(s[["close"] + [f"MA{n}" for n in MA]].tail(180), use_container_width=True)
+        st.markdown('<div class="market-header"><b>個股技術走勢</b><br><small>收盤價・均線・成交量</small></div>', unsafe_allow_html=True)
+        # 使用既有 close/volume 資料；資料庫未必有 OHLC，因此不虛構 K 棒。
+        chart_data = s[["close"] + [f"MA{n}" for n in MA]].tail(180).reset_index()
+        chart_long = chart_data.melt("date", var_name="指標", value_name="價格").dropna()
+        chart = alt.Chart(chart_long).mark_line(strokeWidth=2).encode(
+            x=alt.X("date:T", title="交易日期"),
+            y=alt.Y("價格:Q", scale=alt.Scale(zero=False), title="價格"),
+            color=alt.Color("指標:N", scale=alt.Scale(
+                domain=["close", "MA5", "MA10", "MA20", "MA60", "MA240"],
+                range=["#ffffff", "#f6bf54", "#58c6f5", "#d77df1", "#43c59e", "#ef6576"])),
+            tooltip=[alt.Tooltip("date:T", title="日期"), "指標:N", alt.Tooltip("價格:Q", format=".2f")]
+        ).properties(height=390)
+        st.altair_chart(chart, use_container_width=True)
+        if "volume" in s.columns:
+            volume_data = s[["volume"]].tail(180).reset_index()
+            bars = alt.Chart(volume_data).mark_bar(color="#4c9ec5").encode(
+                x=alt.X("date:T", title="交易日期"),
+                y=alt.Y("volume:Q", title="成交量"),
+                tooltip=["date:T", alt.Tooltip("volume:Q", format=",")]
+            ).properties(height=115)
+            st.altair_chart(bars, use_container_width=True)
+        st.caption("目前資料庫僅提供收盤價與成交量，故以均線走勢圖呈現；真正的日 K 線需另外取得開高低收資料。")
         st.dataframe(s[["close"] + [f"MA{n}" for n in MA]].tail(20).iloc[::-1],
                      use_container_width=True)
         if len(s) < 240: st.warning(f"僅有 {len(s)} 個交易日，240 日年線尚無法完整計算。")
 
 with tab_inst:
-    st.subheader("外資／投信買賣超 TOP 15")
+    st.markdown('<div class="market-header"><b>法人籌碼排行</b><br><small>外資・投信｜每日買超與賣超前 15 名</small></div>', unsafe_allow_html=True)
     st.caption("優先讀取 institutional 資料表；沒有資料時可匯入 CSV。買賣超單位依來源，匯入前請確認一致。")
     uploaded = st.file_uploader("匯入法人 CSV（選用）", type=["csv"], key="v22_inst")
     inst = None
@@ -183,4 +223,3 @@ with tab_inst:
         st.download_button("⬇️ 下載當日法人資料 CSV",
                            data=d.to_csv(index=False).encode("utf-8-sig"),
                            file_name=f"institutional_{date}.csv", mime="text/csv")
-

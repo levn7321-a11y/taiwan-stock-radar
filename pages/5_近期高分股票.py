@@ -21,6 +21,7 @@ def read_history(path,stamp):
     with sqlite3.connect(path) as c:
         d=pd.read_sql_query("""SELECT date,market,code,name,open,high,low,close,volume
                 FROM daily WHERE market IN ('上市','上櫃')
+                  AND date >= (SELECT MIN(date) FROM (SELECT DISTINCT date FROM daily ORDER BY date DESC LIMIT 110))
                 ORDER BY market,code,date""",c,dtype={"code":str})
     d["date"]=pd.to_datetime(d["date"],errors="coerce")
     for k in ("open","high","low","close","volume"):

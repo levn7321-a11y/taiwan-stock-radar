@@ -11,6 +11,7 @@ from top_nav import show_top_nav
 from price_periods import convert_price_period, chart_tail_count
 from technical_charts import chart_view, PANEL_OPTIONS, calculate_kd
 from search_popularity import record_stock_search, top_stock_searches
+from ranking_snapshot import snapshot_ranking
 
 st.set_page_config(
     page_title="台股 AI 突破雷達 V2.6.8",
@@ -107,6 +108,7 @@ def load_prices(path, stamp):
             """
             SELECT date,market,code,name,open,high,low,close,volume
             FROM daily
+            WHERE date >= (SELECT MIN(date) FROM (SELECT DISTINCT date FROM daily ORDER BY date DESC LIMIT 35))
             ORDER BY market,code,date
             """, conn
         )
@@ -123,7 +125,8 @@ def load_institutions(path, stamp):
         if "institutional" not in tables:
             return pd.DataFrame()
         return pd.read_sql_query(
-            "SELECT * FROM institutional", conn
+            """SELECT date,market,code,name,foreign_net,trust_net,dealer_net
+               FROM institutional WHERE date >= (SELECT MIN(date) FROM (SELECT DISTINCT date FROM daily ORDER BY date DESC LIMIT 35))""", conn
         )
 
 
@@ -356,11 +359,23 @@ def render_ranking_table(df, count):
             st.rerun()
 
 
+@st.cache_data(ttl=900, max_entries=30)
+def load_single_history(db_path, db_stamp, market, code):
+    with sqlite3.connect(db_path) as conn:
+        return pd.read_sql_query(
+            """SELECT date,market,code,name,open,high,low,close,volume
+               FROM daily WHERE market=? AND code=?
+               ORDER BY date DESC LIMIT 320""",
+            conn, params=(market,code)
+        )
+
+
 def get_history(market, code):
-    s = prices[
-        (prices["market"] == market)
-        & (prices["code"] == code)
-    ].copy()
+    s = load_single_history(str(DB), DB.stat().st_mtime_ns, market, code)
+    if not s.empty:
+        s["date"] = pd.to_datetime(s["date"], errors="coerce")
+        for field in ("open","high","low","close","volume"):
+            s[field] = pd.to_numeric(s[field], errors="coerce")
 
     if s.empty:
         return s
@@ -603,7 +618,11 @@ if DB.exists():
 else:
     st.error("找不到 twstock.sqlite3")
 
-ranking = build_ranking(prices)
+@st.cache_data(ttl=900, max_entries=2)
+def cached_snapshot(db_path, db_stamp):
+    return snapshot_ranking(db_path)
+
+ranking = cached_snapshot(str(DB), DB.stat().st_mtime_ns) if DB.exists() else pd.DataFrame()
 
 # 自選清單保存在網址參數，不寫入共用資料庫；收藏網址即可下次繼續使用。
 def read_watchlist(raw, valid_keys):

@@ -1,0 +1,23 @@
+name: Streamlit AppTest 真實啟動驗證
+on:
+  push:
+    branches: [fix/streamlit-cloud-startup-stability]
+  pull_request:
+    branches: [main]
+permissions:
+  contents: read
+jobs:
+  startup:
+    runs-on: ubuntu-latest
+    timeout-minutes: 9
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: pip install -r requirements.txt 'altair>=5,<7'
+      - name: Check full database archive was fetched
+        run: |
+          ls -lh twstock.sqlite3 twstock_full.sqlite3.gz || true
+      - name: Verify real Streamlit app startup
+        run: python tests/smoke_homepage.py

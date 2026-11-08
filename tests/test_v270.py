@@ -43,7 +43,7 @@ class NavigationThemeTests(unittest.TestCase):
                      "pages/2_個股技術分析.py", "pages/3_自選個股.py",
                      "pages/4_法人買賣超排行.py", "pages/5_近期高分股票.py"]:
             text = (ROOT / path).read_text(encoding="utf-8")
-            self.assertIn("show_top_nav()", text, path)
+            self.assertIn("show_top_nav(", text, path)
 
 
 if __name__ == "__main__":

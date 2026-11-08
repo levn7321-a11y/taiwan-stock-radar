@@ -176,13 +176,24 @@ def _save_theme():
     st.query_params["theme"] = "light" if st.session_state["radar_light_theme"] else "dark"
 
 
-def show_top_nav():
+@st.cache_data(ttl=900, max_entries=2)
+def _searchable_stocks(db_path, stamp):
+    with sqlite3.connect(db_path) as conn:
+        return conn.execute(
+            """SELECT market,code,MAX(name) FROM daily
+               WHERE date = (SELECT MAX(date) FROM daily)
+                 AND market IN ('上市','上櫃')
+               GROUP BY market,code ORDER BY code"""
+        ).fetchall()
+
+
+def show_top_nav(*, restore_db=True):
     """上方六個浮動分類與跨頁保留的黑／白模式。"""
-    try:
-        ensure_db()
-    except (OSError, ValueError, __import__("sqlite3").DatabaseError) as exc:
-        st.error(f"載入完整歷史資料庫失敗：{exc}")
-        st.stop()
+    if restore_db:
+        try:
+            ensure_db()
+        except (OSError, ValueError, sqlite3.DatabaseError) as exc:
+            st.warning(f"完整歷史資料載入失敗，暫用舊版行情：{exc}")
     if "radar_light_theme" not in st.session_state:
         st.session_state["radar_light_theme"] = st.query_params.get("theme", "light") != "dark"
     elif st.query_params.get("theme") in ("light", "dark"):
@@ -202,11 +213,7 @@ def show_top_nav():
                 db = Path(__file__).resolve().parent / "twstock.sqlite3"
                 try:
                     if db.exists():
-                        with sqlite3.connect(db) as conn:
-                            stocks = conn.execute(
-                                "SELECT market,code,MAX(name) FROM daily "
-                                "WHERE market IN ('上市','上櫃') GROUP BY market,code ORDER BY code"
-                            ).fetchall()
+                        stocks = _searchable_stocks(str(db), db.stat().st_mtime_ns)
                     else:
                         stocks = []
                 except sqlite3.Error:

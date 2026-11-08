@@ -30,7 +30,7 @@ class NavigationThemeTests(unittest.TestCase):
         text = NAV.read_text(encoding="utf-8")
         self.assertIn("st.popover(", text)
         self.assertIn('st.toggle("☀️ 白底模式"', text)
-        self.assertIn("position: sticky", text)
+        self.assertIn("overflow: visible !important", text)
         self.assertIn("radar_light_theme", text)
         self.assertIn("show_top_nav", text)
 

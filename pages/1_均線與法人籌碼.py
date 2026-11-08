@@ -677,6 +677,57 @@ else:
 
 ranking = build_ranking(prices)
 
+# 自選清單保存在網址參數，不寫入共用資料庫；收藏網址即可下次繼續使用。
+def read_watchlist(raw, valid_keys):
+    selected = []
+    for item in str(raw or "").split(","):
+        item = item.strip()
+        if item in valid_keys and item not in selected:
+            selected.append(item)
+    return selected[:100]
+
+
+def save_watchlist(items):
+    if items:
+        st.query_params["watch"] = ",".join(items[:100])
+    elif "watch" in st.query_params:
+        del st.query_params["watch"]
+
+
+stock_options = {}
+if not ranking.empty:
+    for row in ranking[["market", "code", "name"]].itertuples(index=False):
+        key = f"{row.market}:{row.code}"
+        stock_options[key] = f"{row.code} {row.name}（{row.market}）"
+
+watchlist = read_watchlist(st.query_params.get("watch", ""), stock_options)
+with st.sidebar:
+    st.header("⭐ 自選個股")
+    watch_only = st.toggle("只顯示自選個股畫面", value=st.query_params.get("view") == "watch", key="watch_only")
+    if watch_only:
+        st.query_params["view"] = "watch"
+    elif st.query_params.get("view") == "watch":
+        del st.query_params["view"]
+    chosen = st.selectbox(
+        "新增自選個股",
+        options=[""] + list(stock_options),
+        format_func=lambda key: "搜尋股票並加入" if not key else stock_options[key],
+        key="watch_add",
+    )
+    if st.button("＋ 加入自選", use_container_width=True, disabled=not chosen or chosen in watchlist):
+        watchlist.append(chosen)
+        save_watchlist(watchlist)
+        st.rerun()
+    st.caption(f"已收藏 {len(watchlist)} 檔（最多 100 檔）")
+    for key in watchlist:
+        left, right = st.columns([5, 1])
+        left.markdown(f"[{stock_options[key]}]({stock_url(*key.split(':', 1))}&watch={','.join(watchlist)}&view=watch)")
+        if right.button("✕", key=f"watch_remove_{key}", help="移除自選"):
+            watchlist.remove(key)
+            save_watchlist(watchlist)
+            st.rerun()
+    st.caption("自選清單保存在目前網址，請將網址加入書籤；換裝置或清除網址參數不會自動同步。")
+
 selected_code = st.query_params.get("stock", "")
 selected_market = st.query_params.get("market", "")
 
@@ -703,6 +754,28 @@ if selected_code and selected_market:
     else:
         st.warning("找不到指定的股票")
 
+    st.stop()
+
+
+if watch_only:
+    header("⭐ 我的自選個股", "只顯示收藏的股票｜點擊股票名稱查看完整技術分析與法人籌碼")
+    if not watchlist:
+        st.info("目前沒有自選個股，請使用左側「新增自選個股」加入。")
+    else:
+        keys = set(watchlist)
+        watch_data = ranking[
+            ranking.apply(lambda r: f"{r['market']}:{r['code']}" in keys, axis=1)
+        ].copy()
+        if watch_data.empty:
+            st.warning("自選清單中的股票目前沒有行情資料。")
+        else:
+            watch_data["自選順序"] = watch_data.apply(
+                lambda r: watchlist.index(f"{r['market']}:{r['code']}"), axis=1
+            )
+            watch_data = watch_data.sort_values("自選順序")
+            st.metric("自選個股", f"{len(watch_data)} 檔")
+            render_ranking_table(watch_data, 50 if len(watch_data) > 20 else 20)
+            st.caption("自選股使用現有日收盤行情，並非即時報價。")
     st.stop()
 
 

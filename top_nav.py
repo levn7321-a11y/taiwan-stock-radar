@@ -107,6 +107,8 @@ def _theme_css(light):
     }}
     /* Streamlit segmented controls: prevent white unselected tabs with invisible labels. */
     [data-testid="stSegmentedControl"] button,
+    [data-testid="stButtonGroup"] button,
+    [data-testid="stButtonGroup"] [role="radio"],
     [data-testid="stSegmentedControl"] [role="radio"],
     [data-testid="stSegmentedControl"] [role="button"] {{
       background: {panel} !important;
@@ -114,11 +116,15 @@ def _theme_css(light):
       border-color: {border} !important;
     }}
     [data-testid="stSegmentedControl"] button *,
+    [data-testid="stButtonGroup"] button *,
+    [data-testid="stButtonGroup"] [role="radio"] *,
     [data-testid="stSegmentedControl"] [role="radio"] * {{
       color: {text} !important;
       opacity: 1 !important;
     }}
     [data-testid="stSegmentedControl"] button[aria-checked="true"],
+    [data-testid="stButtonGroup"] button[aria-checked="true"],
+    [data-testid="stButtonGroup"] button[aria-pressed="true"],
     [data-testid="stSegmentedControl"] button[aria-pressed="true"],
     [data-testid="stSegmentedControl"] [data-state="checked"] {{
       background: {hover} !important;

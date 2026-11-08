@@ -299,6 +299,11 @@ def render_ranking_table(df, count):
     shown["查看分析"] = [
         stock_url(m, code) for m, code in zip(shown["market"], shown["code"])
     ]
+    # 股票名稱本身是可點擊的圖表連結，片段供 LinkColumn 顯示中文名稱。
+    shown["name"] = [
+        stock_url(m, code) + "#" + str(name)
+        for m, code, name in zip(shown["market"], shown["code"], shown["name"])
+    ]
     names = {
         "code": "股票代號", "name": "股票名稱", "close": "收盤價",
         "volume": "成交量"
@@ -316,6 +321,7 @@ def render_ranking_table(df, count):
         disabled=[c for c in editor.columns if c != "加入自選"],
         column_config={
             "加入自選": st.column_config.CheckboxColumn("加入自選", help="勾選後按下方加入按鈕"),
+            "股票名稱": st.column_config.LinkColumn("股票名稱（點擊看圖）", display_text=r"#([^#]+)$"),
             "查看分析": st.column_config.LinkColumn("個股分析", display_text="查看圖表"),
             "收盤價": st.column_config.NumberColumn("收盤價", format="%.2f"),
             "漲跌幅%": st.column_config.NumberColumn("漲跌幅%", format="%+.2f")
@@ -846,7 +852,7 @@ with tab_radar:
                 index=1
             )
 
-        st.caption("勾選左欄後按「加入勾選股票」；點選右側「查看圖表」開啟個股分析。")
+        st.caption("點股票名稱直接查看 K 線圖；左側勾選後可加入自選。")
 
         render_ranking_table(data, count)
 

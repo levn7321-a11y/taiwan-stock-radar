@@ -1,5 +1,7 @@
 """共用上方浮動導覽與黑／白模式。使用 Streamlit 原生元件以保留跨頁 session_state。"""
 import streamlit as st
+import sqlite3
+from pathlib import Path
 
 # 六個主選單，每個都可以點擊開啟浮動式下拉選擇。
 MENUS = (
@@ -183,12 +185,39 @@ def show_top_nav():
     st.session_state["_radar_theme_toggle"] = bool(st.session_state["radar_light_theme"])
     st.markdown(_theme_css(bool(st.session_state["radar_light_theme"])), unsafe_allow_html=True)
     with st.container(key="radar_top_nav"):
-        cols = st.columns([1, 1, 1.2, 1, 1, 1, 1.05], gap="small", vertical_alignment="center")
+        cols = st.columns([1, 1, 1.2, 1, 1, 1, 0.65, 1.0], gap="small", vertical_alignment="center")
         for col, (title, links) in zip(cols, MENUS):
             with col:
                 with st.popover(title, use_container_width=True):
                     for label, path in links:
                         st.page_link(path, label=label, use_container_width=True)
+        with cols[-2]:
+            with st.popover("🔍 搜尋", use_container_width=True):
+                db = Path(__file__).resolve().parent / "twstock.sqlite3"
+                try:
+                    if db.exists():
+                        with sqlite3.connect(db) as conn:
+                            stocks = conn.execute(
+                                "SELECT market,code,MAX(name) FROM daily "
+                                "WHERE market IN ('上市','上櫃') GROUP BY market,code ORDER BY code"
+                            ).fetchall()
+                    else:
+                        stocks = []
+                except sqlite3.Error:
+                    stocks = []
+                if stocks:
+                    choices = {f"{m}:{c}": f"{c} {n}（{m}）" for m,c,n in stocks}
+                    chosen = st.selectbox(
+                        "搜尋代號／名稱", list(choices), index=None,
+                        format_func=lambda k: choices[k],
+                        placeholder="輸入代號或名稱", key="global_stock_search"
+                    )
+                    if st.button("查看個股圖表", disabled=not chosen, key="global_stock_open",
+                                 use_container_width=True):
+                        st.session_state["global_selected_stock"] = chosen
+                        st.switch_page("pages/1_均線與法人籌碼.py")
+                else:
+                    st.caption("目前沒有可用的股票名單")
         with cols[-1]:
             st.toggle("☀️ 白底模式", key="_radar_theme_toggle",
                       on_change=_save_theme, help="關閉為黑底模式；切換後立即套用。")

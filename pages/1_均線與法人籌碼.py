@@ -460,7 +460,7 @@ def render_stock_analysis(market, code, name, inst):
             st.caption(f"KD（9,3,3）：K {end_bar['K']:.1f}｜D {end_bar['D']:.1f}")
     if missing:
         st.warning(missing)
-    st.caption("台股慣例：紅 K 為收漲、綠 K 為收跌。法人買賣超以張表示，紅色買超、綠色賣超；滑鼠移入圖表可查看數值。")
+    st.caption("台股慣例：紅漲綠跌。下方可切換成交量、KD、投信、外資買賣超（張）。")
 
     if pd.notna(latest["均量20"]) and latest["均量20"] > 0:
         ratio = latest["volume"] / latest["均量20"]
@@ -659,8 +659,12 @@ with st.sidebar:
             st.rerun()
     st.caption("自選清單保存在目前網址，請將網址加入書籤；換裝置或清除網址參數不會自動同步。")
 
-selected_code = st.query_params.get("stock", "")
-selected_market = st.query_params.get("market", "")
+global_selection = st.session_state.pop("global_selected_stock", None)
+if global_selection and global_selection in stock_options:
+    selected_market, selected_code = global_selection.split(":", 1)
+else:
+    selected_code = st.query_params.get("stock", "")
+    selected_market = st.query_params.get("market", "")
 
 # 有指定股票時，先顯示分析，避免還要往下找
 if selected_code and selected_market:

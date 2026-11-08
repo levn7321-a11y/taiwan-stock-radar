@@ -9,7 +9,7 @@ import altair as alt
 import streamlit as st
 
 st.set_page_config(
-    page_title="台股 AI 突破雷達 V2.5",
+    page_title="台股 AI 突破雷達 V2.6.7",
     page_icon="📈",
     layout="wide",
     initial_sidebar_state="collapsed",
@@ -122,33 +122,59 @@ def load_institutions(path, stamp):
 
 
 def normalize_institutions(df):
-    required = {
-        "date", "market", "code", "name",
-        "foreign_net", "trust_net"
-    }
+    required = {"date", "market", "code", "name", "foreign_net", "trust_net", "dealer_net"}
     if not required.issubset(df.columns):
         return pd.DataFrame()
-
     df = df.copy()
-    df["date"] = pd.to_datetime(
-        df["date"], errors="coerce"
-    )
-    df["code"] = (
-        df["code"].astype(str)
-        .str.replace(r"\.0$", "", regex=True)
-        .str.strip()
-    )
+    df["date"] = pd.to_datetime(df["date"], errors="coerce").dt.normalize()
+    df["code"] = df["code"].astype(str).str.replace(r"\.0$", "", regex=True).str.strip()
     df["market"] = df["market"].astype(str).str.strip()
+    for c in ["foreign_net", "trust_net", "dealer_net"]:
+        df[c] = pd.to_numeric(df[c].astype(str).str.replace(",", "", regex=False), errors="coerce")
+    df = df.dropna(subset=["date", "foreign_net", "trust_net", "dealer_net"])
+    df = df.drop_duplicates(["date", "market", "code"], keep="last")
+    # 資料庫保存原始股數；畫面統一轉換為張（一般股票 1 張 = 1000 股）。
+    for c in ["foreign_net", "trust_net", "dealer_net"]:
+        df[c + "_lots"] = df[c] / 1000.0
+    df["total_net_lots"] = (df["foreign_net"] + df["trust_net"] + df["dealer_net"]) / 1000.0
+    return df.sort_values(["market", "code", "date"])
 
-    for c in ["foreign_net", "trust_net"]:
-        df[c] = pd.to_numeric(
-            df[c].astype(str).str.replace(
-                ",", "", regex=False
-            ),
-            errors="coerce"
+
+LOT_COLUMNS = {
+    "外資": "foreign_net_lots", "投信": "trust_net_lots",
+    "自營商": "dealer_net_lots", "三大法人合計": "total_net_lots",
+}
+
+
+def signed_lots(value):
+    return "—" if pd.isna(value) else f"{float(value):+,.3f}".rstrip("0").rstrip(".")
+
+
+def trading_dates_by_market(price_df, market, n):
+    return sorted(price_df.loc[price_df["market"] == market, "date"].dropna().unique())[-n:]
+
+
+def build_inst_ranking(inst_df, price_df, market_choice, n):
+    if inst_df.empty or price_df.empty:
+        return pd.DataFrame()
+    markets = ["上市", "上櫃"] if market_choice == "上市＋上櫃" else [market_choice]
+    result = []
+    for m in markets:
+        dates = trading_dates_by_market(price_df, m, n)
+        if len(dates) < n:
+            continue
+        part = inst_df[(inst_df["market"] == m) & (inst_df["date"].isin(dates))].copy()
+        if part.empty:
+            continue
+        sums = part.groupby(["market", "code"], as_index=False).agg(
+            name=("name", "last"), days=("date", "nunique"),
+            **{key: (key, "sum") for key in LOT_COLUMNS.values()}
         )
-
-    return df.dropna(subset=["date"])
+        # 只納入最近 N 個市場交易日都有法人紀錄的股票。
+        sums = sums[sums["days"] == n].copy()
+        if not sums.empty:
+            result.append(sums)
+    return pd.concat(result, ignore_index=True) if result else pd.DataFrame()
 
 
 def market_filter(df, selected):
@@ -360,7 +386,7 @@ def render_stock_analysis(market, code, name, inst):
 
     header(
         f"📈 {code} {name}｜個股完整分析",
-        "技術均線｜成交量｜外資投信｜主力籌碼"
+        "技術均線｜成交量｜三大法人買賣超（張）｜主力籌碼"
     )
 
     latest = s.iloc[-1]
@@ -519,109 +545,56 @@ def render_stock_analysis(market, code, name, inst):
         )
 
     st.divider()
-    st.subheader("🏦 最近法人籌碼")
-
+    st.subheader("🏦 法人買賣超分析（單位：張）")
     if inst.empty:
-        st.info(
-            "目前尚未取得外資、投信歷史資料。"
-            "需先接入法人每日資料更新。"
-        )
+        st.info("目前沒有可用的三大法人資料。")
     else:
-        d = inst[
-            (inst["market"] == market)
-            & (inst["code"] == code)
-        ].copy()
-
-        d = (
-            d.sort_values("date")
-            .drop_duplicates("date", keep="last")
-        )
-
+        d = inst[(inst["market"] == market) & (inst["code"] == code)].copy()
+        d = d.sort_values("date").drop_duplicates("date", keep="last")
         if d.empty:
-            st.info("這檔股票目前沒有法人資料")
+            st.info("這檔股票目前沒有法人資料。")
         else:
+            last_date = d["date"].max()
+            st.caption(f"最新法人日期：{last_date.date()}｜買超為正、賣超為負｜一般股票 1 張 = 1,000 股")
             latest_inst = d.iloc[-1]
+            cols = st.columns(4)
+            for col, (label, key) in zip(cols, LOT_COLUMNS.items()):
+                col.metric(f"{label}（當日）", signed_lots(latest_inst[key]) + " 張")
 
-            st.caption(
-                "法人最新日期："
-                f"{latest_inst['date'].date()}"
-                "｜單位依資料來源"
+            st.markdown("**法人累計買賣超**")
+            rows = []
+            for n in [1, 5, 10, 20]:
+                dates = trading_dates_by_market(prices, market, n)
+                recent = d[d["date"].isin(dates)]
+                row = {"期間": f"近 {n} 日"}
+                complete = len(dates) == n and recent["date"].nunique() == n
+                for label, key in LOT_COLUMNS.items():
+                    row[label + "（張）"] = signed_lots(recent[key].sum()) if complete else "資料不足"
+                rows.append(row)
+            st.dataframe(pd.DataFrame(rows), hide_index=True, use_container_width=True)
+            st.caption("累計以市場最近 N 個行情交易日計算；缺少任一天法人資料時顯示資料不足，不以零代替。")
+
+            chart_source = d.tail(20).copy()
+            chart_long = chart_source[["date"] + list(LOT_COLUMNS.values())].melt(
+                "date", var_name="key", value_name="買賣超張數"
             )
-
-            c1, c2, c3 = st.columns(3)
-
-            for col, n in zip(
-                [c1, c2, c3], [5, 10, 20]
-            ):
-                recent = d.tail(n)
-
-                if len(recent) < n:
-                    col.metric(
-                        f"最近{n}日外資",
-                        "資料不足"
-                    )
-                else:
-                    col.metric(
-                        f"最近{n}日外資",
-                        fmt(recent["foreign_net"].sum(), 0)
-                    )
-
-            c1, c2, c3 = st.columns(3)
-
-            for col, n in zip(
-                [c1, c2, c3], [5, 10, 20]
-            ):
-                recent = d.tail(n)
-
-                if len(recent) < n:
-                    col.metric(
-                        f"最近{n}日投信",
-                        "資料不足"
-                    )
-                else:
-                    col.metric(
-                        f"最近{n}日投信",
-                        fmt(recent["trust_net"].sum(), 0)
-                    )
-
-            chart_inst = (
-                d.tail(30)[
-                    ["date", "foreign_net", "trust_net"]
-                ]
-                .melt(
-                    "date",
-                    var_name="法人",
-                    value_name="買賣超"
-                )
-            )
-
-            inst_chart = (
-                alt.Chart(chart_inst)
-                .mark_bar()
-                .encode(
-                    x=alt.X("date:T", title="日期"),
-                    y=alt.Y("買賣超:Q"),
-                    color="法人:N",
-                    xOffset="法人:N",
-                    tooltip=[
-                        "date:T", "法人:N",
-                        alt.Tooltip("買賣超:Q", format=",.0f")
-                    ]
-                )
-                .properties(height=220)
-            )
-
-            st.altair_chart(
-                inst_chart, use_container_width=True
-            )
-
-            st.dataframe(
-                d.tail(20).iloc[::-1][
-                    ["date", "foreign_net", "trust_net"]
-                ],
-                use_container_width=True,
-                hide_index=True
-            )
+            labels = {v: k for k, v in LOT_COLUMNS.items()}
+            chart_long["法人"] = chart_long["key"].map(labels)
+            chart_long["方向"] = chart_long["買賣超張數"].apply(lambda v: "買超" if v > 0 else "賣超" if v < 0 else "持平")
+            chosen = st.selectbox("柱狀圖顯示", list(LOT_COLUMNS), key=f"inst_chart_{market}_{code}")
+            chart_long = chart_long[chart_long["法人"] == chosen]
+            bars = alt.Chart(chart_long).mark_bar().encode(
+                x=alt.X("date:T", title="交易日期"),
+                y=alt.Y("買賣超張數:Q", title="買賣超（張）"),
+                color=alt.Color("方向:N", scale=alt.Scale(
+                    domain=["買超", "賣超", "持平"], range=["#e74b58", "#15a36c", "#8995a6"]
+                )),
+                tooltip=[alt.Tooltip("date:T", title="日期"), "法人:N", alt.Tooltip("買賣超張數:Q", format="+,.3f")]
+            ).properties(height=240)
+            st.altair_chart(bars, use_container_width=True)
+            details = d.tail(20).iloc[::-1][["date"] + list(LOT_COLUMNS.values())].copy()
+            details = details.rename(columns={"date": "日期", **{v: k + "（張）" for k, v in LOT_COLUMNS.items()}})
+            st.dataframe(details, hide_index=True, use_container_width=True)
 
     st.subheader("🏢 主力籌碼")
     st.info(
@@ -645,7 +618,7 @@ def render_stock_analysis(market, code, name, inst):
     )
 
 
-st.title("📈 台股 AI 突破雷達 V2.5｜專業看盤")
+st.title("📈 台股 AI 突破雷達 V2.6.7｜專業看盤")
 st.caption(
     "點擊股票名稱查看技術分析、成交量與法人籌碼"
 )
@@ -895,122 +868,46 @@ with tab_ma:
 
 
 with tab_inst:
-    header(
-        "法人籌碼排行榜",
-        "外資、投信買賣超"
-    )
-
-    uploaded = st.file_uploader(
-        "匯入法人 CSV（選用）",
-        type=["csv"]
-    )
-
-    if uploaded is not None:
-        try:
-            inst = normalize_institutions(
-                pd.read_csv(
-                    uploaded, dtype={"code": str}
-                )
-            )
-        except Exception as e:
-            st.error(f"CSV讀取失敗：{e}")
-
+    header("法人籌碼排行榜 V2.6.7", "外資｜投信｜自營商｜三大法人合計｜單位：張")
+    st.caption("排行榜以資料庫法人股數換算為張；僅列入選定期間每個交易日都有法人紀錄的股票。")
     if inst.empty:
-        st.info(
-            "目前沒有法人資料。"
-            "請先接入每日法人資料或匯入CSV。"
-        )
+        st.info("資料庫尚無完整三大法人資料，請先確認每日資料更新。")
     else:
-        a, b, c = st.columns(3)
+        c1, c2, c3, c4 = st.columns(4)
+        with c1:
+            inst_market = st.selectbox("市場", ["上市＋上櫃", "上市", "上櫃"], key="inst_market")
+        with c2:
+            inst_period = st.selectbox("累計期間", [1, 5, 10, 20], key="inst_period", format_func=lambda n: f"近 {n} 個交易日")
+        with c3:
+            inst_who = st.selectbox("法人類別", list(LOT_COLUMNS), key="inst_who")
+        with c4:
+            inst_count = st.selectbox("排行筆數", [15, 30, 50], key="inst_count")
 
-        with a:
-            day = st.selectbox(
-                "資料日期",
-                sorted(
-                    inst["date"].dt.date.unique(),
-                    reverse=True
-                )
-            )
+        board = build_inst_ranking(inst, prices, inst_market, inst_period)
+        if board.empty:
+            st.warning("所選期間沒有符合完整資料條件的股票。可先改選近 1 日或 5 日，等待歷史缺口補齊。")
+        else:
+            col = LOT_COLUMNS[inst_who]
+            latest_date = inst["date"].max().date()
+            st.caption(f"法人資料最新日期：{latest_date}｜有效股票 {len(board):,} 檔｜買超紅色、賣超綠色")
+            left, right = st.columns(2)
+            for panel, title, positive in [(left, "買超排行榜", True), (right, "賣超排行榜", False)]:
+                with panel:
+                    st.subheader(f"{inst_who}｜{title}")
+                    selected = board[board[col] > 0].nlargest(inst_count, col) if positive else board[board[col] < 0].nsmallest(inst_count, col)
+                    selected = selected[["market", "code", "name", col]].rename(columns={
+                        "market": "市場", "code": "代號", "name": "名稱", col: "買賣超（張）"
+                    }).copy()
+                    selected["個股分析"] = selected.apply(lambda r: stock_url(r["市場"], r["代號"]), axis=1)
+                    st.dataframe(selected, hide_index=True, use_container_width=True,
+                        column_config={"個股分析": st.column_config.LinkColumn("個股分析", display_text="點擊查看"),
+                                       "買賣超（張）": st.column_config.NumberColumn("買賣超（張）", format="%.3f")})
+            export = board.rename(columns={"market": "市場", "code": "代號", "name": "名稱", **{v: k + "（張）" for k, v in LOT_COLUMNS.items()}})
+            st.download_button("⬇️ 下載法人累計排行榜 CSV", data=export.to_csv(index=False).encode("utf-8-sig"),
+                file_name=f"institutional_ranking_{inst_period}d.csv", mime="text/csv")
 
-        with b:
-            market = st.selectbox(
-                "市場",
-                ["上市＋上櫃", "上市", "上櫃"]
-            )
-
-        with c:
-            who = st.selectbox(
-                "法人",
-                ["外資", "投信"]
-            )
-
-        d = market_filter(
-            inst[inst["date"].dt.date == day],
-            market
-        )
-
-        col = (
-            "foreign_net"
-            if who == "外資"
-            else "trust_net"
-        )
-
-        left, right = st.columns(2)
-
-        for panel, title, positive in [
-            (left, "買超前15", True),
-            (right, "賣超前15", False)
-        ]:
-            with panel:
-                st.subheader(f"{who}｜{title}")
-
-                if positive:
-                    t = d[d[col] > 0].nlargest(15, col)
-                else:
-                    t = d[d[col] < 0].nsmallest(15, col)
-
-                t = t[
-                    ["market", "code", "name", col]
-                ].rename(
-                    columns={
-                        "market": "市場",
-                        "code": "代號",
-                        "name": "名稱",
-                        col: "買賣超"
-                    }
-                ).copy()
-
-                t["查看分析"] = t.apply(
-                    lambda r: stock_url(
-                        r["市場"], r["代號"]
-                    ),
-                    axis=1
-                )
-
-                st.dataframe(
-                    t,
-                    column_config={
-                        "查看分析":
-                        st.column_config.LinkColumn(
-                            "個股分析",
-                            display_text="點擊查看"
-                        )
-                    },
-                    hide_index=True,
-                    use_container_width=True
-                )
-
-        st.download_button(
-            "⬇️ 下載法人資料 CSV",
-            data=d.to_csv(
-                index=False
-            ).encode("utf-8-sig"),
-            file_name=f"institutional_{day}.csv",
-            mime="text/csv"
-        )
 
 st.caption(
     "非即時行情｜歷史資料不足時均線不顯示"
     "｜非投資建議"
 )
-

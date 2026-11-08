@@ -9,7 +9,7 @@ import altair as alt
 import streamlit as st
 
 st.set_page_config(
-    page_title="台股 AI 突破雷達 V2.6.7",
+    page_title="台股 AI 突破雷達 V2.6.8",
     page_icon="📈",
     layout="wide",
     initial_sidebar_state="collapsed",
@@ -146,8 +146,19 @@ LOT_COLUMNS = {
 }
 
 
-def signed_lots(value):
-    return "—" if pd.isna(value) else f"{float(value):+,.3f}".rstrip("0").rstrip(".")
+SECURITY_TYPES = ["一般股票（代碼初篩）", "ETF／其他證券（代碼初篩）", "全部商品"]
+
+def filter_security_type(df, choice):
+    """代碼初篩，非交易所官方商品分類；不可視為精確股票清單。"""
+    if df.empty or choice == "全部商品":
+        return df
+    stock_like = df["code"].astype(str).str.fullmatch(r"[1-9][0-9]{3}", na=False)
+    return df[stock_like] if choice == SECURITY_TYPES[0] else df[~stock_like]
+
+def signed_lots(value, decimals=0):
+    if pd.isna(value):
+        return "—"
+    return f"{float(value):+,.{decimals}f}"
 
 
 def trading_dates_by_market(price_df, market, n):
@@ -618,7 +629,7 @@ def render_stock_analysis(market, code, name, inst):
     )
 
 
-st.title("📈 台股 AI 突破雷達 V2.6.7｜專業看盤")
+st.title("📈 台股 AI 突破雷達 V2.6.8｜專業看盤")
 st.caption(
     "點擊股票名稱查看技術分析、成交量與法人籌碼"
 )
@@ -708,9 +719,7 @@ with tab_radar:
     if ranking.empty:
         st.info("目前沒有行情資料")
     else:
-        a, b, c, d = st.columns(
-            [1.2, 1.2, 1.2, 1.5]
-        )
+        a, b, c, d, e = st.columns([1.15, 1.45, 1.2, 1.2, 1.5])
 
         with a:
             market = st.selectbox(
@@ -719,6 +728,9 @@ with tab_radar:
             )
 
         with b:
+            security_type = st.selectbox("商品類型", SECURITY_TYPES, key="radar_security_type")
+
+        with c:
             sort = st.selectbox(
                 "排行榜",
                 [
@@ -730,7 +742,7 @@ with tab_radar:
                 ]
             )
 
-        with c:
+        with d:
             trend = st.selectbox(
                 "均線條件",
                 [
@@ -740,15 +752,16 @@ with tab_radar:
                 ]
             )
 
-        with d:
+        with e:
             keyword = st.text_input(
                 "搜尋代號／名稱",
                 placeholder="例如2330或台積電"
             )
 
-        data = market_filter(
-            ranking, market
+        data = filter_security_type(
+            market_filter(ranking, market), security_type
         ).copy()
+        st.caption("商品分類為代碼初步篩選，並非證交所／櫃買中心的正式證券分類。")
 
         if trend == "站上月線":
             data = data[
@@ -868,22 +881,27 @@ with tab_ma:
 
 
 with tab_inst:
-    header("法人籌碼排行榜 V2.6.7", "外資｜投信｜自營商｜三大法人合計｜單位：張")
+    header("法人籌碼排行榜 V2.6.8", "外資｜投信｜自營商｜三大法人合計｜單位：張")
     st.caption("排行榜以資料庫法人股數換算為張；僅列入選定期間每個交易日都有法人紀錄的股票。")
     if inst.empty:
         st.info("資料庫尚無完整三大法人資料，請先確認每日資料更新。")
     else:
-        c1, c2, c3, c4 = st.columns(4)
+        c1, c2, c3, c4, c5 = st.columns(5)
         with c1:
             inst_market = st.selectbox("市場", ["上市＋上櫃", "上市", "上櫃"], key="inst_market")
         with c2:
-            inst_period = st.selectbox("累計期間", [1, 5, 10, 20], key="inst_period", format_func=lambda n: f"近 {n} 個交易日")
+            inst_type = st.selectbox("商品類型", SECURITY_TYPES, key="inst_security_type")
         with c3:
-            inst_who = st.selectbox("法人類別", list(LOT_COLUMNS), key="inst_who")
+            inst_period = st.selectbox("累計期間", [1, 5, 10, 20], key="inst_period", format_func=lambda n: f"近 {n} 個交易日")
         with c4:
+            inst_who = st.selectbox("法人類別", list(LOT_COLUMNS), key="inst_who")
+        with c5:
             inst_count = st.selectbox("排行筆數", [15, 30, 50], key="inst_count")
 
-        board = build_inst_ranking(inst, prices, inst_market, inst_period)
+        board = filter_security_type(
+            build_inst_ranking(inst, prices, inst_market, inst_period), inst_type
+        )
+        st.caption("一般股票以四位數且首碼 1～9 初步辨識；ETF／其他證券分類僅供篩選參考，不代表官方證券分類。")
         if board.empty:
             st.warning("所選期間沒有符合完整資料條件的股票。可先改選近 1 日或 5 日，等待歷史缺口補齊。")
         else:
@@ -898,10 +916,11 @@ with tab_inst:
                     selected = selected[["market", "code", "name", col]].rename(columns={
                         "market": "市場", "code": "代號", "name": "名稱", col: "買賣超（張）"
                     }).copy()
+                    # 計算保留原始精度，畫面預設顯示整數張。
+                    selected["買賣超（張）"] = selected["買賣超（張）"].map(signed_lots)
                     selected["個股分析"] = selected.apply(lambda r: stock_url(r["市場"], r["代號"]), axis=1)
                     st.dataframe(selected, hide_index=True, use_container_width=True,
-                        column_config={"個股分析": st.column_config.LinkColumn("個股分析", display_text="點擊查看"),
-                                       "買賣超（張）": st.column_config.NumberColumn("買賣超（張）", format="%.3f")})
+                        column_config={"個股分析": st.column_config.LinkColumn("個股分析", display_text="點擊查看")})
             export = board.rename(columns={"market": "市場", "code": "代號", "name": "名稱", **{v: k + "（張）" for k, v in LOT_COLUMNS.items()}})
             st.download_button("⬇️ 下載法人累計排行榜 CSV", data=export.to_csv(index=False).encode("utf-8-sig"),
                 file_name=f"institutional_ranking_{inst_period}d.csv", mime="text/csv")

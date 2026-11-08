@@ -5,12 +5,15 @@ from datetime import date
 import pandas as pd
 import requests
 import streamlit as st
+from top_nav import show_top_nav
 
 st.set_page_config(
     page_title="個股技術分析",
     page_icon="📈",
     layout="wide"
 )
+
+show_top_nav()
 
 DB = Path(__file__).resolve().parents[1] / "twstock.sqlite3"
 

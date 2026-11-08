@@ -19,7 +19,7 @@ def isolated(path, names):
 class RankingTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        cls.func=isolated("pages/4_法人買賣超排行.py",{"rank_institutions"})["rank_institutions"]
+        cls.func=staticmethod(isolated("pages/4_法人買賣超排行.py",{"rank_institutions"})["rank_institutions"])
     def test_five_days_and_missing_data(self):
         dates=pd.date_range("2026-11-02",periods=5,freq="D")
         calendar=pd.DataFrame({"date":dates,"market":["上市"]*5})
@@ -44,7 +44,7 @@ class RankingTests(unittest.TestCase):
 class ScoreTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        cls.func=isolated("pages/5_近期高分股票.py",{"score_recent"})["score_recent"]
+        cls.func=staticmethod(isolated("pages/5_近期高分股票.py",{"score_recent"})["score_recent"])
     def test_score_breakout(self):
         dates=pd.date_range("2026-07-01",periods=62,freq="B")
         rows=[]

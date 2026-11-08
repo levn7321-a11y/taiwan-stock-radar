@@ -1,7 +1,7 @@
 
 # -*- coding: utf-8 -*-
 """
-台股 AI 突破雷達 V2.6.5
+台股 AI 突破雷達 V2.6.6（安全驗證版）
 上市／上櫃三大法人資料缺口檢查與修復
 
 檢查：
@@ -214,16 +214,31 @@ def fetch_twse(day):
 
 
 def fetch_tpex(day):
-    """使用 V2.6.3 已驗證的上櫃法人 API 與解析器。"""
+    """使用回補程式相同的官方來源及嚴格核對解析器。"""
     from backfill_v26 import task_config
 
     url, params, parser = task_config(day, "上櫃", "法人")
     data = get_json(url, params)
 
-    records = parser(data, day)
+    # 先檢查實際表格格式；不猜測重複欄位的法人歸屬。
+    headers, raw_rows = parse_table(data)
+    log.info("%s 上櫃官方來源：%s", day, url)
+    log.info("%s 上櫃欄位數：%d，資料列數：%d", day, len(headers), len(raw_rows))
+    log.info("%s 上櫃欄位位置：%s", day,
+             [(i, name) for i, name in enumerate(headers)])
 
+    # backfill_v26 的 parse_tpex_inst 僅接受核對過的 24 欄格式，
+    # 並驗證外資＋投信＋自營商＝三大法人合計。
+    # 其他格式先保留原資料，等待人工確認欄位對照。
+    if len(headers) != 24:
+        log.warning("%s 上櫃欄位非已驗證的 24 欄，停止寫入", day)
+        return []
+
+    records = parser(data, day)
     result = []
     for row in records:
+        if len(row) != 7:
+            raise ValueError("上櫃法人解析結果欄位數錯誤")
         result.append({
             "date": row[0],
             "market": row[1],
@@ -233,45 +248,7 @@ def fetch_tpex(day):
             "trust_net": row[5],
             "dealer_net": row[6],
         })
-
     return result
-    date_text = day.strftime("%Y/%m/%d")
-    roc_date = (
-        f"{day.year - 1911}/{day.month:02d}/{day.day:02d}"
-    )
-
-    sources = [
-        (
-            "https://www.tpex.org.tw/www/zh-tw/3insti/daily",
-            {"date": date_text},
-        ),
-        (
-            "https://www.tpex.org.tw/web/stock/3insti/daily_trade/"
-            "3itrade_hedge_result.php",
-            {
-                "l": "zh-tw",
-                "se": "EW",
-                "t": "D",
-                "d": roc_date,
-            },
-        ),
-    ]
-
-    last_error = None
-
-    for url, params in sources:
-        try:
-            data = get_json(url, params)
-            result = parse_institutional(data, day, "上櫃")
-            if result:
-                return result
-        except (requests.RequestException, ValueError) as exc:
-            last_error = exc
-
-    if last_error:
-        log.warning("%s 上櫃來源回應：%s", day, last_error)
-
-    return []
 
 
 def table_columns(conn, table):

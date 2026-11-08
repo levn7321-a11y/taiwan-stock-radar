@@ -1,5 +1,6 @@
 """Execute the real Streamlit homepage (not only syntax/unit tests) with checked-in full DB."""
 import sys
+from pathlib import Path
 from unittest.mock import patch
 from streamlit.testing.v1 import AppTest
 
@@ -8,7 +9,7 @@ class EmptyMarketResponse:
     def json(self): return []
 
 with patch("requests.get", return_value=EmptyMarketResponse()):
-    app = AppTest.from_file("app.py", default_timeout=110).run()
+    app = AppTest.from_file(str(Path(__file__).resolve().parents[1] / "app.py"), default_timeout=110).run()
 print("HOME_TEST_EXCEPTION_COUNT", len(app.exception))
 for exception in app.exception:
     print(exception.message, file=sys.stderr)

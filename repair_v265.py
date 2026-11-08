@@ -214,6 +214,27 @@ def fetch_twse(day):
 
 
 def fetch_tpex(day):
+    """使用 V2.6.3 已驗證的上櫃法人 API 與解析器。"""
+    from backfill_v26 import task_config
+
+    url, params, parser = task_config(day, "上櫃", "法人")
+    data = get_json(url, params)
+
+    records = parser(data, day)
+
+    result = []
+    for row in records:
+        result.append({
+            "date": row[0],
+            "market": row[1],
+            "code": row[2],
+            "name": row[3],
+            "foreign_net": row[4],
+            "trust_net": row[5],
+            "dealer_net": row[6],
+        })
+
+    return result
     date_text = day.strftime("%Y/%m/%d")
     roc_date = (
         f"{day.year - 1911}/{day.month:02d}/{day.day:02d}"

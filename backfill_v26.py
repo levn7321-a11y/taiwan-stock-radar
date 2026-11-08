@@ -1,10 +1,7 @@
 
-# 台股 AI 突破雷達 V2.6.1
-# 上市／上櫃行情與三大法人歷史回補
-# 使用方式：
-# python backfill_v26.py --days 10
-# python backfill_v26.py --days 30
-# 注意：請勿隨意使用 --reset
+# 台股 AI 突破雷達 V2.6.2
+# 上市／上櫃行情與法人歷史回補
+# 保留原有資料，失敗日期可重試
 
 import argparse
 import logging
@@ -20,23 +17,22 @@ DB = Path(__file__).resolve().parent / "twstock.sqlite3"
 
 logging.basicConfig(
     level=logging.INFO,
-    format="%(asctime)s %(levelname)s %(message)s"
+    format="%(asctime)s %(levelname)s %(message)s",
 )
-log = logging.getLogger("V2.6.1")
+log = logging.getLogger("V2.6.2")
 
 session = requests.Session()
 session.headers.update({
     "User-Agent": "Mozilla/5.0",
-    "Accept": "application/json, */*"
+    "Accept": "application/json, */*",
 })
 
 TWSE_PRICE = (
     "https://www.twse.com.tw/rwd/zh/"
     "afterTrading/MI_INDEX"
 )
-TWSE_INST = (
-    "https://www.twse.com.tw/rwd/zh/fund/T86"
-)
+TWSE_INST = "https://www.twse.com.tw/rwd/zh/fund/T86"
+
 TPEX_PRICE = (
     "https://www.tpex.org.tw/web/stock/"
     "aftertrading/otc_quotes_no1430/"
@@ -48,77 +44,69 @@ TPEX_INST = (
 )
 
 
-def number(value):
+def num(value):
     if value is None:
         return None
-    s = re.sub(r"<[^>]*>", "", str(value))
-    s = s.replace(",", "").replace("−", "-").strip()
-    if s in ("", "-", "--", "---", "—", "X"):
+    value = re.sub(r"<[^>]+>", "", str(value))
+    value = value.replace(",", "").replace("−", "-")
+    value = value.strip()
+    if value in ("", "-", "--", "---", "—", "X"):
         return None
     try:
-        return float(s)
+        return float(value)
     except ValueError:
         return None
 
 
 def integer(value):
-    n = number(value)
-    return int(n) if n is not None else None
+    value = num(value)
+    return int(value) if value is not None else None
 
 
-def valid_code(value):
-    return bool(
-        re.fullmatch(r"[0-9A-Za-z]{4,6}", str(value))
-    )
+def code_ok(value):
+    return bool(re.fullmatch(
+        r"[0-9A-Za-z]{4,6}", str(value).strip()
+    ))
 
 
-def roc_date(day):
-    return (
-        f"{day.year - 1911}/"
-        f"{day.month:02d}/{day.day:02d}"
-    )
+def roc(day):
+    return f"{day.year - 1911}/{day.month:02d}/{day.day:02d}"
 
 
-def normalize_field(value):
+def normalized(value):
     return re.sub(
-        r"[\s（）()＋+]",
-        "",
-        str(value)
+        r"[\s（）()＋+]", "", str(value)
     )
 
 
-def field_index(fields, keywords):
-    normalized = [
-        normalize_field(x) for x in fields
-    ]
-    for keyword in keywords:
-        key = normalize_field(keyword)
-        for i, name in enumerate(normalized):
-            if key in name:
+def field_index(fields, names):
+    clean = [normalized(f) for f in fields]
+    for name in names:
+        target = normalized(name)
+        for i, field in enumerate(clean):
+            if target in field:
                 return i
     return None
 
 
-def get_json(url, params):
+def request_json(url, params):
     for attempt in range(3):
         try:
-            r = session.get(
-                url,
-                params=params,
-                timeout=40
+            response = session.get(
+                url, params=params, timeout=40
             )
-            r.raise_for_status()
-            return r.json()
+            response.raise_for_status()
+            return response.json()
         except Exception as exc:
             log.warning(
-                "API 第 %d 次失敗：%s",
+                "API 失敗 %d/3：%s",
                 attempt + 1, exc
             )
-            time.sleep(3 * (attempt + 1))
+            time.sleep(2 * (attempt + 1))
     return None
 
 
-def ensure_database(conn):
+def init_db(conn):
     conn.execute("""
         CREATE TABLE IF NOT EXISTS institutional (
             date TEXT NOT NULL,
@@ -140,15 +128,19 @@ def ensure_database(conn):
     """)
 
     conn.execute("""
-        CREATE TABLE IF NOT EXISTS v26_retry_dates (
-            date TEXT PRIMARY KEY
+        CREATE TABLE IF NOT EXISTS v26_retry_tasks (
+            date TEXT NOT NULL,
+            market TEXT NOT NULL,
+            kind TEXT NOT NULL,
+            reason TEXT,
+            PRIMARY KEY(date, market, kind)
         )
     """)
 
     conn.commit()
 
 
-def parse_twse_prices(data, day):
+def parse_twse_price(data, day):
     result = []
     if not isinstance(data, dict):
         return result
@@ -168,10 +160,10 @@ def parse_twse_prices(data, day):
         for row in rows:
             try:
                 code = str(row[ci]).strip()
-                close = number(row[pi])
+                close = num(row[pi])
                 volume = integer(row[vi])
 
-                if not valid_code(code):
+                if not code_ok(code):
                     continue
                 if close is None or volume is None:
                     continue
@@ -187,27 +179,72 @@ def parse_twse_prices(data, day):
     return result
 
 
-def parse_tpex_prices(data, day):
-    result = []
+def tpex_table(data):
     if not isinstance(data, dict):
+        return [], []
+
+    for table in data.get("tables", []):
+        fields = table.get("fields", [])
+        rows = table.get("data", [])
+        if fields and rows:
+            return fields, rows
+
+    fields = (
+        data.get("fields")
+        or data.get("columnNames")
+        or []
+    )
+    rows = (
+        data.get("aaData")
+        or data.get("data")
+        or []
+    )
+
+    return fields, rows
+
+
+def parse_tpex_price(data, day):
+    """
+    櫃買中心每日收盤行情：
+    0 代號、1 名稱、2 收盤、7 成交股數。
+    """
+    result = []
+    fields, rows = tpex_table(data)
+
+    if not rows:
         return result
 
-    rows = data.get("aaData") or data.get("data") or []
+    # 有欄位名稱時優先使用名稱
+    ci = field_index(fields, ["代號"])
+    ni = field_index(fields, ["名稱"])
+    pi = field_index(fields, ["收盤"])
+    vi = field_index(fields, ["成交股數"])
+
+    if None in (ci, ni, pi, vi):
+        # 僅接受已知的櫃買中心標準欄位格式
+        if not fields and len(rows[0]) >= 17:
+            ci, ni, pi, vi = 0, 1, 2, 7
+        else:
+            log.error(
+                "%s 上櫃行情欄位不符：%s",
+                day, fields
+            )
+            return []
 
     for row in rows:
         try:
-            code = str(row[0]).strip()
-            close = number(row[2])
-            volume = integer(row[8])
+            code = str(row[ci]).strip()
+            close = num(row[pi])
+            volume = integer(row[vi])
 
-            if not valid_code(code):
+            if not code_ok(code):
                 continue
             if close is None or volume is None:
                 continue
 
             result.append((
                 day.isoformat(), "上櫃", code,
-                str(row[1]).strip(),
+                str(row[ni]).strip(),
                 close, volume
             ))
         except (IndexError, TypeError):
@@ -216,7 +253,7 @@ def parse_tpex_prices(data, day):
     return result
 
 
-def parse_twse_institutions(data, day):
+def parse_twse_inst(data, day):
     result = []
     if not isinstance(data, dict):
         return result
@@ -229,21 +266,20 @@ def parse_twse_institutions(data, day):
     fi = field_index(fields, [
         "外陸資買賣超股數不含外資自營商"
     ])
-    ti = field_index(fields, [
-        "投信買賣超股數"
-    ])
-    di = field_index(fields, [
-        "自營商買賣超股數"
-    ])
+    ti = field_index(fields, ["投信買賣超股數"])
+    di = field_index(fields, ["自營商買賣超股數"])
 
     if None in (ci, ni, fi, ti, di):
-        log.error("上市法人欄位不符：%s", fields)
-        return result
+        log.error(
+            "%s 上市法人欄位不符：%s",
+            day, fields
+        )
+        return []
 
     for row in rows:
         try:
             code = str(row[ci]).strip()
-            if not valid_code(code):
+            if not code_ok(code):
                 continue
 
             foreign = integer(row[fi])
@@ -264,86 +300,67 @@ def parse_twse_institutions(data, day):
     return result
 
 
-def tpex_table_rows(data):
-    """取得櫃買中心資料表及欄位名稱。"""
-    if not isinstance(data, dict):
-        return [], []
-
-    tables = data.get("tables", [])
-    if isinstance(tables, list):
-        for table in tables:
-            if not isinstance(table, dict):
-                continue
-            fields = table.get("fields", [])
-            rows = table.get("data", [])
-            if fields and rows:
-                return fields, rows
-
-    fields = (
-        data.get("fields")
-        or data.get("columnNames")
-        or []
-    )
-    rows = (
-        data.get("data")
-        or data.get("aaData")
-        or []
-    )
-    return fields, rows
-
-
-def parse_tpex_institutions(data, day):
+def parse_tpex_inst(data, day):
     """
-    上櫃法人資料：
-    只依照 API 回傳的欄位名稱取值。
-    無法確認欄位時不寫入，避免錯誤籌碼。
-    """
-    result = []
-    fields, rows = tpex_table_rows(data)
+    上櫃法人安全解析。
 
-    if not fields:
-        log.error(
-            "%s 上櫃法人缺少欄位名稱；"
-            "資料鍵值：%s",
-            day,
-            list(data.keys()) if isinstance(data, dict)
-            else "非 JSON 物件"
+    API 有多組重複的「買賣超股數」欄位。
+    不能只搜尋第一個同名欄位。
+
+    若無法確認法人分組，不寫入資料庫。
+    """
+    fields, rows = tpex_table(data)
+
+    if not fields or not rows:
+        log.warning(
+            "%s 上櫃法人無可用欄位或資料",
+            day
         )
-        return result
+        return []
 
-    ci = field_index(fields, [
-        "證券代號", "股票代號", "代號"
-    ])
-    ni = field_index(fields, [
-        "證券名稱", "股票名稱", "名稱"
-    ])
-    fi = field_index(fields, [
-        "外資及陸資不含外資自營商買賣超",
-        "外資及陸資買賣超",
-        "外資買賣超"
-    ])
-    ti = field_index(fields, [
-        "投信買賣超"
-    ])
-    di = field_index(fields, [
-        "自營商買賣超合計",
-        "自營商合計買賣超",
-        "自營商買賣超"
-    ])
+    clean = [normalized(f) for f in fields]
 
-    if None in (ci, ni, fi, ti, di):
+    # 目前官方表格可能只提供重複的
+    # 買進、賣出、買賣超欄位，
+    # 而沒有可辨識的分組名稱。
+    # 在未確認每一組代表哪一類法人之前，
+    # 不應直接使用固定索引猜測。
+    foreign_candidates = [
+        i for i, f in enumerate(clean)
+        if "外資" in f and "買賣超" in f
+    ]
+    trust_candidates = [
+        i for i, f in enumerate(clean)
+        if "投信" in f and "買賣超" in f
+    ]
+    dealer_candidates = [
+        i for i, f in enumerate(clean)
+        if "自營商" in f
+        and "買賣超" in f
+        and "合計" not in f
+    ]
+
+    if not (
+        len(foreign_candidates) == 1
+        and len(trust_candidates) == 1
+        and len(dealer_candidates) == 1
+    ):
         log.error(
-            "%s 上櫃法人欄位無法對應：%s",
+            "%s 上櫃法人欄位分組尚未確認；"
+            "不寫入資料。欄位：%s",
             day, fields
         )
-        return result
+        return []
 
-    invalid = 0
+    fi = foreign_candidates[0]
+    ti = trust_candidates[0]
+    di = dealer_candidates[0]
 
+    result = []
     for row in rows:
         try:
-            code = str(row[ci]).strip()
-            if not valid_code(code):
+            code = str(row[0]).strip()
+            if not code_ok(code):
                 continue
 
             foreign = integer(row[fi])
@@ -351,30 +368,20 @@ def parse_tpex_institutions(data, day):
             dealer = integer(row[di])
 
             if None in (foreign, trust, dealer):
-                invalid += 1
-                continue
+                return []
 
             result.append((
                 day.isoformat(), "上櫃", code,
-                str(row[ni]).strip(),
+                str(row[1]).strip(),
                 foreign, trust, dealer
             ))
         except (IndexError, TypeError):
-            invalid += 1
-
-    if invalid:
-        log.error(
-            "%s 上櫃法人 %d 筆解析失敗，"
-            "本日不寫入",
-            day, invalid
-        )
-        return []
+            return []
 
     return result
 
 
-def save_prices(conn, records):
-    # 保留既有行情資料；新資料只補缺漏
+def save_price(conn, records):
     for row in records:
         conn.execute("""
             INSERT INTO daily
@@ -383,15 +390,13 @@ def save_prices(conn, records):
             WHERE NOT EXISTS (
                 SELECT 1 FROM daily
                 WHERE date = ?
-                  AND market = ?
-                  AND code = ?
+                AND market = ?
+                AND code = ?
             )
         """, row + row[:3])
 
 
-def save_institutions(conn, records):
-    # 同一天同市場的資料重新寫入，
-    # 避免舊版錯誤數字殘留。
+def save_inst(conn, records):
     day, market = records[0][:2]
 
     conn.execute("""
@@ -407,126 +412,182 @@ def save_institutions(conn, records):
     """, records)
 
 
-def process_source(
-    conn, day, market, kind,
-    url, params, parser
-):
-    data = get_json(url, params)
-
-    if data is None:
-        log.error(
-            "%s %s %s：API 失敗",
-            day, market, kind
-        )
-        return False
-
-    records = parser(data, day)
-
-    if not records:
-        log.warning(
-            "%s %s %s：取得 0 筆",
-            day, market, kind
-        )
-        return False
-
-    try:
-        with conn:
-            if kind == "行情":
-                save_prices(conn, records)
-            else:
-                save_institutions(conn, records)
-
-        log.info(
-            "%s %s %s：取得 %d 筆",
-            day, market, kind, len(records)
-        )
-        return True
-    except sqlite3.Error as exc:
-        log.error(
-            "%s %s %s：資料庫錯誤 %s",
-            day, market, kind, exc
-        )
-        return False
-
-
-def collect_day(conn, day, prices=True, inst=True):
+def task_config(day, market, kind):
     ad = day.strftime("%Y%m%d")
-    roc = roc_date(day)
-    tasks = []
+    rd = roc(day)
 
-    if prices:
-        tasks.extend([
-            (
-                "上市", "行情", TWSE_PRICE,
-                {
-                    "date": ad,
-                    "type": "ALLBUT0999",
-                    "response": "json"
-                },
-                parse_twse_prices
-            ),
-            (
-                "上櫃", "行情", TPEX_PRICE,
-                {
-                    "l": "zh-tw",
-                    "d": roc,
-                    "se": "EW"
-                },
-                parse_tpex_prices
-            )
-        ])
-
-    if inst:
-        tasks.extend([
-            (
-                "上市", "法人", TWSE_INST,
-                {
-                    "date": ad,
-                    "selectType": "ALLBUT0999",
-                    "response": "json"
-                },
-                parse_twse_institutions
-            ),
-            (
-                "上櫃", "法人", TPEX_INST,
-                {
-                    "type": "Daily",
-                    "sect": "EW",
-                    "date": roc,
-                    "id": "",
-                    "response": "json"
-                },
-                parse_tpex_institutions
-            )
-        ])
-
-    results = []
-
-    for market, kind, url, params, parser in tasks:
-        ok = process_source(
-            conn, day, market, kind,
-            url, params, parser
+    if market == "上市" and kind == "行情":
+        return (
+            TWSE_PRICE,
+            {
+                "date": ad,
+                "type": "ALLBUT0999",
+                "response": "json",
+            },
+            parse_twse_price,
         )
-        results.append(ok)
+
+    if market == "上櫃" and kind == "行情":
+        return (
+            TPEX_PRICE,
+            {
+                "l": "zh-tw",
+                "d": rd,
+                "se": "EW",
+            },
+            parse_tpex_price,
+        )
+
+    if market == "上市" and kind == "法人":
+        return (
+            TWSE_INST,
+            {
+                "date": ad,
+                "selectType": "ALLBUT0999",
+                "response": "json",
+            },
+            parse_twse_inst,
+        )
+
+    return (
+        TPEX_INST,
+        {
+            "type": "Daily",
+            "sect": "EW",
+            "date": rd,
+            "id": "",
+            "response": "json",
+        },
+        parse_tpex_inst,
+    )
+
+
+def run_task(conn, day, market, kind):
+    url, params, parser = task_config(
+        day, market, kind
+    )
+
+    data = request_json(url, params)
+    records = (
+        parser(data, day) if data is not None else []
+    )
+
+    if records:
+        try:
+            with conn:
+                if kind == "行情":
+                    save_price(conn, records)
+                else:
+                    save_inst(conn, records)
+
+                conn.execute("""
+                    DELETE FROM v26_retry_tasks
+                    WHERE date = ?
+                    AND market = ?
+                    AND kind = ?
+                """, (
+                    day.isoformat(), market, kind
+                ))
+
+            log.info(
+                "%s %s %s：取得 %d 筆",
+                day, market, kind, len(records)
+            )
+            return True
+
+        except sqlite3.Error as exc:
+            log.error("資料庫錯誤：%s", exc)
+
+    log.warning(
+        "%s %s %s：取得 0 筆，等待重試",
+        day, market, kind
+    )
+
+    with conn:
+        conn.execute("""
+            INSERT INTO v26_retry_tasks
+            (date, market, kind, reason)
+            VALUES (?, ?, ?, ?)
+            ON CONFLICT(date, market, kind)
+            DO UPDATE SET reason = excluded.reason
+        """, (
+            day.isoformat(),
+            market,
+            kind,
+            "API 無資料、解析失敗或寫入失敗",
+        ))
+
+    return False
+
+
+def process_day(conn, day, include_inst=True):
+    if day.weekday() >= 5:
+        return
+
+    for market in ("上市", "上櫃"):
+        run_task(conn, day, market, "行情")
         time.sleep(1)
 
-    return all(results) if results else True
+    if include_inst:
+        for market in ("上市", "上櫃"):
+            run_task(conn, day, market, "法人")
+            time.sleep(1)
+
+
+def retry_tasks(conn, limit=12):
+    rows = conn.execute("""
+        SELECT date, market, kind
+        FROM v26_retry_tasks
+        WHERE date <= ?
+        ORDER BY date DESC
+        LIMIT ?
+    """, (
+        (date.today() - timedelta(days=1)).isoformat(),
+        limit,
+    )).fetchall()
+
+    if rows:
+        log.info(
+            "開始重試 %d 個失敗項目",
+            len(rows)
+        )
+
+    for day_text, market, kind in rows:
+        day = date.fromisoformat(day_text)
+        if day.weekday() >= 5:
+            continue
+
+        run_task(conn, day, market, kind)
+        time.sleep(1)
 
 
 def run(days, reset=False):
     today = date.today()
-    oldest_price = today - timedelta(days=450)
-    oldest_inst = today - timedelta(days=365)
+    price_limit = today - timedelta(days=450)
+    inst_limit = today - timedelta(days=365)
 
     with sqlite3.connect(DB) as conn:
-        ensure_database(conn)
+        init_db(conn)
 
         if reset:
-            conn.execute("""
-                DELETE FROM v26_progress
-                WHERE dataset = 'history'
-            """)
-            conn.commit()
+            log.warning(
+                "--reset 僅重設歷史進度，"
+                "不刪除行情與法人資料"
+            )
+            with conn:
+                conn.execute("""
+                    DELETE FROM v26_progress
+                    WHERE dataset = 'history'
+                """)
+
+        # 先重試之前失敗的日期
+        retry_tasks(conn)
+
+        # 最近 3 天更新
+        for offset in range(3):
+            day = today - timedelta(days=offset)
+            if day.weekday() < 5:
+                process_day(conn, day)
 
         row = conn.execute("""
             SELECT next_day
@@ -539,88 +600,47 @@ def run(days, reset=False):
             if row else today
         )
 
-        # 先修補最近10天法人
-        log.info("開始檢查最近10天法人資料")
-
-        for offset in range(10):
-            day = today - timedelta(days=offset)
-            if day.weekday() >= 5:
-                continue
-
-            complete = collect_day(
-                conn, day,
-                prices=False, inst=True
-            )
-            if not complete:
-                conn.execute("""
-                    INSERT OR IGNORE
-                    INTO v26_retry_dates(date)
-                    VALUES (?)
-                """, (day.isoformat(),))
-                conn.commit()
-
-        # 更新最近4天行情
-        for offset in range(4):
-            day = today - timedelta(days=offset)
-            if day.weekday() >= 5:
-                continue
-
-            collect_day(
-                conn, day,
-                prices=True, inst=False
-            )
-
         processed = 0
-        failures = 0
 
         while (
-            cursor >= oldest_price
+            cursor >= price_limit
             and processed < days
         ):
-            day = cursor
-
-            if day.weekday() < 5:
-                ok = collect_day(
+            if cursor.weekday() < 5:
+                process_day(
                     conn,
-                    day,
-                    prices=True,
-                    inst=(day >= oldest_inst)
+                    cursor,
+                    include_inst=(cursor >= inst_limit)
                 )
-
-                if not ok:
-                    failures += 1
-                    conn.execute("""
-                        INSERT OR IGNORE
-                        INTO v26_retry_dates(date)
-                        VALUES (?)
-                    """, (day.isoformat(),))
-                    conn.commit()
 
             cursor -= timedelta(days=1)
             processed += 1
 
-        conn.execute("""
-            INSERT INTO v26_progress
-            (dataset, next_day)
-            VALUES ('history', ?)
-            ON CONFLICT(dataset)
-            DO UPDATE SET
-                next_day = excluded.next_day
-        """, (cursor.isoformat(),))
+        with conn:
+            conn.execute("""
+                INSERT INTO v26_progress
+                (dataset, next_day)
+                VALUES ('history', ?)
+                ON CONFLICT(dataset)
+                DO UPDATE SET
+                    next_day = excluded.next_day
+            """, (cursor.isoformat(),))
 
-        conn.commit()
+        pending = conn.execute("""
+            SELECT COUNT(*)
+            FROM v26_retry_tasks
+        """).fetchone()[0]
 
         log.info(
             "本批完成，下一次從 %s 繼續",
             cursor
         )
         log.info(
-            "本批不完整日期數：%d",
-            failures
+            "待重試項目：%d",
+            pending
         )
         log.info(
-            "注意：待補日期已記錄，"
-            "尚未實作自動重新處理待補清單"
+            "V2.6.2 執行結束"
         )
 
 
@@ -632,9 +652,10 @@ if __name__ == "__main__":
     parser.add_argument(
         "--reset", action="store_true"
     )
+
     args = parser.parse_args()
 
     run(
         days=max(1, min(args.days, 90)),
-        reset=args.reset
+        reset=args.reset,
     )

@@ -34,6 +34,7 @@ def parse_watch(raw):
 def save_watch(items):
     """網址可加入書籤，重新整理仍能保留個人的自選清單。"""
     value = ",".join(items)
+    st.session_state["radar_watch_keys"] = list(items)
     if value:
         st.query_params["watch"] = value
     elif "watch" in st.query_params:
@@ -148,7 +149,13 @@ stocks["id"] = stocks["market"] + ":" + stocks["code"]
 stocks["label"] = stocks["code"] + " " + stocks["name"].astype(str) + "（" + stocks["market"] + "）"
 labels = dict(zip(stocks["id"], stocks["label"]))
 
-selected = [key for key in parse_watch(st.query_params.get("watch", "")) if key in labels]
+# Streamlit 原生跨頁選單會保留 session_state，避免離開自選頁再返回時清單消失。
+url_watch = parse_watch(st.query_params.get("watch", ""))
+stored_watch = st.session_state.get("radar_watch_keys", [])
+selected = [key for key in (url_watch if url_watch else stored_watch) if key in labels]
+st.session_state["radar_watch_keys"] = selected
+if selected and not url_watch:
+    save_watch(selected)
 
 with st.expander("➕ 新增或移除自選個股", expanded=not bool(selected)):
     choose = st.selectbox("搜尋並選擇股票", options=stocks["id"].tolist(),

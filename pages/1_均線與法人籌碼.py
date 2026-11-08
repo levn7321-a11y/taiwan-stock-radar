@@ -321,6 +321,19 @@ def render_ranking_table(df, count):
             "漲跌幅%": st.column_config.NumberColumn("漲跌幅%", format="%+.2f")
         }
     )
+    stock_keys = [
+        f"{m}:{code}" for m, code in zip(shown["market"], shown["code"])
+    ]
+    picked_key = st.selectbox(
+        "選擇查看個股技術分析", stock_keys, index=None,
+        format_func=lambda key: stock_options.get(key, key),
+        placeholder="選擇股票後開啟完整 K 線與法人分析",
+        key=f"inspect_{editor_key}"
+    )
+    if st.button("📈 開啟選取個股分析", disabled=not picked_key,
+                 key=f"inspect_btn_{editor_key}"):
+        st.query_params["market"], st.query_params["stock"] = picked_key.split(":", 1)
+        st.rerun()
     if st.button("⭐ 加入勾選股票", key=f"add_checked_{editor_key}"):
         additions = [
             f"{m}:{code}" for m, code, checked in zip(

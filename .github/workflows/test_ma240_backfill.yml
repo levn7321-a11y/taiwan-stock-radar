@@ -1,0 +1,19 @@
+name: MA240 260交易日回補測試
+on:
+  push:
+    branches: [fix/ma240-260-session-backfill]
+  pull_request:
+    branches: [main]
+permissions:
+  contents: read
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: pip install requests
+      - run: python -m compileall -q backfill_ma240.py backfill_v26.py
+      - run: python -m unittest discover -s tests -p 'test_ma240_backfill.py' -v

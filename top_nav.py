@@ -105,6 +105,58 @@ def _theme_css(light):
     [data-testid="stPopoverBody"] a {{
       color: {text} !important;
     }}
+    /* Streamlit segmented controls: prevent white unselected tabs with invisible labels. */
+    [data-testid="stSegmentedControl"] button,
+    [data-testid="stButtonGroup"] button,
+    [data-testid="stButtonGroup"] [role="radio"],
+    [data-testid="stSegmentedControl"] [role="radio"],
+    [data-testid="stSegmentedControl"] [role="button"] {{
+      background: {panel} !important;
+      color: {text} !important;
+      border-color: {border} !important;
+    }}
+    [data-testid="stSegmentedControl"] button *,
+    [data-testid="stButtonGroup"] button *,
+    [data-testid="stButtonGroup"] [role="radio"] *,
+    [data-testid="stSegmentedControl"] [role="radio"] * {{
+      color: {text} !important;
+      opacity: 1 !important;
+    }}
+    [data-testid="stSegmentedControl"] button[aria-checked="true"],
+    [data-testid="stButtonGroup"] button[aria-checked="true"],
+    [data-testid="stButtonGroup"] button[aria-pressed="true"],
+    [data-testid="stSegmentedControl"] button[aria-pressed="true"],
+    [data-testid="stSegmentedControl"] [data-state="checked"] {{
+      background: {hover} !important;
+      outline: 2px solid {accent} !important;
+    }}
+    [data-testid="stRadio"] label *,
+    [data-testid="stCheckbox"] label *,
+    [data-testid="stDataFrame"] * {{
+      opacity: 1;
+    }}
+    /* The historical stock dashboard ships fixed dark styling; override it for both themes. */
+    [data-testid="stApp"] .market-header,
+    [data-testid="stApp"] div[data-testid="stMetric"],
+    [data-testid="stApp"] .stock-table-wrap {{
+      background: {panel} !important;
+      border-color: {border} !important;
+    }}
+    [data-testid="stApp"] .market-header b,
+    [data-testid="stApp"] .market-header small,
+    [data-testid="stApp"] div[data-testid="stMetric"] label,
+    [data-testid="stApp"] div[data-testid="stMetric"] [data-testid="stMetricValue"],
+    [data-testid="stApp"] .stock-table td {{
+      color: {text} !important;
+    }}
+    [data-testid="stApp"] .stock-table th {{
+      background: {hover} !important;
+      color: {text} !important;
+    }}
+    [data-testid="stApp"] .stock-table td {{
+      background: {panel} !important;
+      border-color: {border} !important;
+    }}
     [data-testid="stPopoverBody"] {{
       border: 1px solid {border};
       background: {panel};
@@ -118,12 +170,15 @@ def _save_theme():
     # Widget key is temporary and can be cleaned when switching Streamlit pages.
     # Copy to a non-widget session key before navigating.
     st.session_state["radar_light_theme"] = bool(st.session_state["_radar_theme_toggle"])
+    st.query_params["theme"] = "light" if st.session_state["radar_light_theme"] else "dark"
 
 
 def show_top_nav():
     """上方六個浮動分類與跨頁保留的黑／白模式。"""
     if "radar_light_theme" not in st.session_state:
-        st.session_state["radar_light_theme"] = st.query_params.get("theme") == "light"
+        st.session_state["radar_light_theme"] = st.query_params.get("theme", "light") != "dark"
+    elif st.query_params.get("theme") in ("light", "dark"):
+        st.session_state["radar_light_theme"] = (st.query_params["theme"] == "light")
     # Restore widget state on every page, rather than relying on widget-key persistence.
     st.session_state["_radar_theme_toggle"] = bool(st.session_state["radar_light_theme"])
     st.markdown(_theme_css(bool(st.session_state["radar_light_theme"])), unsafe_allow_html=True)

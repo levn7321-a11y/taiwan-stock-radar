@@ -90,6 +90,18 @@ def chart_view(bars, panel, frequency="日線", inst=None, calendar=None):
         if col in df and df[col].notna().any():
             layers.append(base.mark_line(strokeWidth=1.6,color=hue).encode(x=xt,
                 y=alt.Y(f"{col}:Q"),tooltip=[alt.Tooltip("日期:N"),alt.Tooltip(f"{col}:Q",format=",.2f")]))
+    # 明確標示目前視圖範圍內的最高價與最低價，兩者各一個標籤。
+    max_bar = df.loc[[df["high"].idxmax()]]
+    min_bar = df.loc[[df["low"].idxmin()]]
+    labels_high = alt.Chart(max_bar).mark_text(
+        dy=-12, fontSize=12, fontWeight="bold", color="#d94452"
+    ).encode(x=xt, y="high:Q", text=alt.Text("high:Q",format=",.2f"),
+             tooltip=[alt.Tooltip("日期:N"),alt.Tooltip("high:Q",title="區間最高",format=",.2f")])
+    labels_low = alt.Chart(min_bar).mark_text(
+        dy=14, fontSize=12, fontWeight="bold", color="#078b60"
+    ).encode(x=xt, y="low:Q", text=alt.Text("low:Q",format=",.2f"),
+             tooltip=[alt.Tooltip("日期:N"),alt.Tooltip("low:Q",title="區間最低",format=",.2f")])
+    layers.extend([labels_high, labels_low])
     primary=alt.layer(*layers).properties(height=355,title="紅漲綠跌｜日／週／月 K 線與移動平均線")
     warning = ""
     if panel=="成交量":

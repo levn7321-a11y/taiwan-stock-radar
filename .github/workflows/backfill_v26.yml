@@ -6,12 +6,13 @@ on:
     branches: [main]
     paths:
       - '.github/workflows/backfill_v26.yml'
+      - 'backfill_ma240.py'
   workflow_dispatch:
     inputs:
       days:
         description: "本次回補日曆天數"
         required: true
-        default: "60"
+        default: "90"
       reset:
         description: "是否重新從最新日期開始"
         required: true
@@ -48,15 +49,20 @@ jobs:
           python -m pip install --upgrade pip
           pip install requests
 
-      - name: 更新行情與法人資料
+      - name: 官方歷史行情補足至 260 個交易日
         env:
-          DAYS: ${{ github.event.inputs.days || '60' }}
+          DAYS: ${{ github.event.inputs.days || '90' }}
           RESET: ${{ github.event.inputs.reset || 'false' }}
+          EVENT_NAME: ${{ github.event_name }}
         run: |
           if [ "$RESET" = "true" ]; then
             python backfill_v26.py --days "$DAYS" --reset
+          fi
+          # 正式版首次更新時連續補三批，其餘每天只補一批，避免逾時。
+          if [ "$EVENT_NAME" = "push" ]; then
+            python backfill_ma240.py --target 260 --batches 3 --days 90
           else
-            python backfill_v26.py --days "$DAYS"
+            python backfill_ma240.py --target 260 --batches 1 --days "$DAYS"
           fi
 
       - name: 儲存資料庫

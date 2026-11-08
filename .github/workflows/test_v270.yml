@@ -1,0 +1,21 @@
+name: V2.7.0 主題與浮動導覽驗證
+on:
+  push:
+    branches: [feature/v270-floating-nav-theme]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: 編譯程式
+        run: python -m compileall -q app.py top_nav.py pages tests
+      - name: 執行導覽與主題測試
+        run: python -m unittest discover -s tests -p 'test_v270.py' -v

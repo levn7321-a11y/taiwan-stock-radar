@@ -2,7 +2,7 @@
 import altair as alt
 import pandas as pd
 
-PANEL_OPTIONS = ["成交量", "KD線", "三大法人買賣超", "外資買賣超"]
+PANEL_OPTIONS = ["成交量", "KD線", "投信買賣超", "外資買賣超"]
 RED = "#f04b58"       # 台股慣例：紅漲
 GREEN = "#17b978"     # 台股慣例：綠跌
 FLAT = "#9ca3af"
@@ -54,6 +54,7 @@ def aggregate_institutional(inst, calendar, frequency):
         frame = totals.where(available.eq(expected, axis=0))
     frame["三大法人買賣超"] = frame[cols].sum(axis=1, min_count=3)
     frame["外資買賣超"] = frame["foreign_net"]
+    frame["投信買賣超"] = frame["trust_net"]
     return frame / 1000.0
 
 

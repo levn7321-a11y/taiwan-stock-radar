@@ -10,6 +10,7 @@ import streamlit as st
 from storage import init_db, save, load, fetch_latest, FIELDS
 from history import backfill, day
 from top_nav import show_top_nav
+from market_indices import show_market_indices
 
 
 def scan(df, min_turnover=5000000, vol_multiple=1.8, breakout_days=20):
@@ -72,6 +73,7 @@ def scan(df, min_turnover=5000000, vol_multiple=1.8, breakout_days=20):
 st.set_page_config(page_title='台股 AI 突破雷達 V2.0', layout='wide', initial_sidebar_state='collapsed')
 show_top_nav()
 
+show_market_indices()
 st.title('📈 台股 AI 突破雷達 V2.0')
 st.caption('上市＋上櫃｜日線突破、爆量、短線異動｜研究用途，非投資建議｜非盤中即時報價')
 init_db()

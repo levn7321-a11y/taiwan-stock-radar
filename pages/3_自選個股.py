@@ -3,6 +3,9 @@
 import re
 import sqlite3
 from pathlib import Path
+from urllib.parse import urlencode
+from technical_charts import chart_view, PANEL_OPTIONS, calculate_kd
+from price_periods import convert_price_period, chart_tail_count
 
 import pandas as pd
 import streamlit as st
@@ -62,9 +65,9 @@ def load_recent(db_path, stamp, keys):
     conditions = " OR ".join("(market = ? AND code = ?)" for _ in pairs)
     params = [part for pair in pairs for part in pair]
     sql = f"""
-        SELECT date, market, code, name, close, volume
+        SELECT date, market, code, name, open, high, low, close, volume
         FROM (
-            SELECT date, market, code, name, close, volume,
+            SELECT date, market, code, name, open, high, low, close, volume,
                    ROW_NUMBER() OVER (PARTITION BY market, code ORDER BY date DESC) AS rn
             FROM daily WHERE {conditions}
         ) WHERE rn <= 260 ORDER BY market, code, date
@@ -188,7 +191,8 @@ except sqlite3.Error as exc:
 
 if not prices.empty:
     prices["date"] = pd.to_datetime(prices["date"], errors="coerce")
-    prices["close"] = pd.to_numeric(prices["close"], errors="coerce")
+    for c in ("open", "high", "low", "close", "volume"):
+        prices[c] = pd.to_numeric(prices[c], errors="coerce")
     prices["volume"] = pd.to_numeric(prices["volume"], errors="coerce")
     prices = prices.dropna(subset=["date", "close"]).drop_duplicates(["date","market","code"], keep="last")
 if not inst.empty:
@@ -200,8 +204,21 @@ if board.empty:
     st.stop()
 
 st.subheader("📋 自選個股專屬看板")
+# 點股票名稱可直接前往專業 K 線頁；保留選股清單與目前主題。
+board["查看圖表"] = [
+    "/均線與法人籌碼?" + urlencode({
+        "market": row["市場"], "stock": row["代號"],
+        "watch": ",".join(selected),
+        "theme": "light" if st.session_state.get("radar_light_theme", True) else "dark",
+        "股票": str(row["名稱"]),
+    }) + "#" + str(row["名稱"])
+    for _, row in board.iterrows()
+]
+board["名稱"] = board["查看圖表"]
 st.dataframe(board, use_container_width=True, hide_index=True,
              column_config={
+                 "名稱": st.column_config.LinkColumn("股票名稱（點擊看圖表）", display_text=r"#(.+)$"),
+                 "查看圖表": None,
                  "收盤價": st.column_config.NumberColumn("收盤價", format="%.2f"),
                  "漲跌幅%": st.column_config.NumberColumn("漲跌幅%", format="%+.2f"),
                  "MA20": st.column_config.NumberColumn("MA20", format="%.2f"),
@@ -215,26 +232,47 @@ st.caption("法人數據原始單位為股，除以 1,000 換算為張；沒有�
 st.subheader("📈 自選股票走勢與法人")
 chosen = st.selectbox("查看自選股票", selected, format_func=lambda item: labels.get(item, item), key="watch_detail")
 market, code = chosen.split(":", 1)
-p = prices[(prices["market"] == market) & (prices["code"] == code)].sort_values("date").copy()
-if len(p):
-    p["MA5"] = p["close"].rolling(5, min_periods=5).mean()
-    p["MA20"] = p["close"].rolling(20, min_periods=20).mean()
-    st.line_chart(p.set_index("date")[["close", "MA5", "MA20"]], use_container_width=True)
-    st.caption("收盤價與均線均為歷史值；MA20 未滿 20 個交易日不顯示。")
-else:
-    st.warning("這檔股票沒有歷史行情。")
+if st.button("📈 開啟這檔股票的完整技術分析", key="watch_open_detail"):
+    st.session_state["global_selected_stock"] = chosen
+    st.switch_page("pages/1_均線與法人籌碼.py")
 
-if not inst.empty:
-    d = inst[(inst["market"] == market) & (inst["code"] == code)].sort_values("date").tail(20).copy()
-    if not d.empty:
-        for col, name in [("foreign_net","外資"), ("trust_net","投信"), ("dealer_net","自營商")]:
-            d[name] = pd.to_numeric(d[col], errors="coerce") / 1000
-        d["三大法人合計"] = d[["外資","投信","自營商"]].sum(axis=1, min_count=3)
-        st.bar_chart(d.set_index("date")[["外資","投信","自營商"]], use_container_width=True)
-        st.dataframe(d[["date","外資","投信","自營商","三大法人合計"]].iloc[::-1],
-                     use_container_width=True, hide_index=True)
-    else:
-        st.info("這檔股票沒有法人紀錄。")
+p = prices[(prices["market"] == market) & (prices["code"] == code)].sort_values("date").copy()
+if p.empty:
+    st.warning("這檔股票沒有歷史行情。")
 else:
-    st.info("資料庫目前沒有可顯示的法人紀錄。")
-st.caption("自選清單僅儲存在本頁網址中；不使用共用伺服器資料庫儲存個人選股，請保留含 watch 參數的網址。")
+    timeframe = st.segmented_control("K 線週期", ["日線", "週線", "月線"],
+                                     default="日線", key="watch_timeframe")
+    period = st.radio("觀察期間", ["3個月", "6個月", "1年", "全部"],
+                      index=2, horizontal=True, key="watch_period")
+    indicator = st.segmented_control("下方指標切換", PANEL_OPTIONS,
+                                     default="成交量", key="watch_indicator")
+    bars = convert_price_period(p, timeframe or "日線")
+    shown = bars.tail(chart_tail_count(timeframe or "日線", period, len(bars)))
+    d = inst[(inst["market"] == market) & (inst["code"] == code)].copy() if not inst.empty else pd.DataFrame()
+    # 以全市場實際交易日檢查法人完整性，而非只使用這檔股票的交易日期。
+    @st.cache_data(ttl=300)
+    def market_dates(db_path, stamp, m):
+        with sqlite3.connect(db_path) as conn:
+            rows = pd.read_sql_query(
+                "SELECT DISTINCT date FROM daily WHERE market=? ORDER BY date",
+                conn, params=(m,)
+            )
+        return pd.to_datetime(rows["date"], errors="coerce").dropna()
+    calendar = market_dates(str(DB), stamp, market)
+    graphic, warning = chart_view(
+        shown, indicator or "成交量", frequency=timeframe or "日線",
+        inst=d, calendar=calendar
+    )
+    if graphic is not None:
+        st.altair_chart(graphic, use_container_width=True)
+        last = calculate_kd(shown).iloc[-1]
+        change = float(last["close"]-last["open"])
+        symbol = "🔴" if change>0 else "🟢" if change<0 else "⚪"
+        st.caption(
+            f"{symbol} {timeframe or '日線'}｜開 {last['open']:,.2f}｜"
+            f"高 {last['high']:,.2f}｜低 {last['low']:,.2f}｜"
+            f"收 {last['close']:,.2f}｜開收漲跌 {change:+,.2f}"
+        )
+    if warning:
+        st.warning(warning)
+    st.caption("紅漲綠跌｜投信與外資買賣超以張計算；歷史資料不代表盤中即時報價。")

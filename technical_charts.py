@@ -92,6 +92,7 @@ def chart_view(bars, panel, frequency="日線", inst=None, calendar=None):
             f"其餘 {len(clean)} 根正常顯示。"
             + (" 缺漏日期（最多顯示 5 筆）：" + "、".join(dates) if dates else "")
         )
+    skipped_warning = warning
     prepared = calculate_kd(clean)
     df = prepared.reset_index().copy()
     df["日期"] = pd.to_datetime(df["date"]).dt.strftime("%Y-%m-%d")
@@ -217,4 +218,6 @@ def chart_view(bars, panel, frequency="日線", inst=None, calendar=None):
             bottom = alt.layer(bars,numbers)
     combined=alt.vconcat(primary,bottom.properties(height=145,title=panel),
                          spacing=5).resolve_scale(x="shared",y="independent")
+    if skipped_warning and warning != skipped_warning:
+        warning = skipped_warning + " " + warning
     return combined, warning

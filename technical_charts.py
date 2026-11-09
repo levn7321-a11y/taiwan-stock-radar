@@ -58,13 +58,42 @@ def aggregate_institutional(inst, calendar, frequency):
     return frame / 1000.0
 
 
+def valid_ohlc_bars(bars):
+    """只留下開、高、低、收皆有效的 K 棒，絕不以收盤價偽造缺少的欄位。"""
+    if bars.empty:
+        return bars.copy()
+    columns = ("open", "high", "low", "close")
+    if not all(col in bars.columns for col in columns):
+        return bars.iloc[0:0].copy()
+    prices = bars.loc[:, list(columns)].apply(pd.to_numeric, errors="coerce")
+    # 異常零價、負價不應被繪製為正常 K 棒。
+    mask = prices.notna().all(axis=1) & prices.gt(0).all(axis=1)
+    return bars.loc[mask].copy()
+
+
 def chart_view(bars, panel, frequency="日線", inst=None, calendar=None):
     """建立 K 棒、均線與可切換下方副圖；法人單位為張。"""
     if bars.empty:
         return None, "查無價格行情"
-    prepared = calculate_kd(bars)
-    if prepared[["open","high","low","close"]].isna().any().any():
-        return None, "部分開高低收資料缺漏，無法繪製完整 K 棒"
+    clean = valid_ohlc_bars(bars)
+    skipped = len(bars) - len(clean)
+    if clean.empty:
+        return None, (
+            f"所選期間 {len(bars)} 根 K 棒的開盤、最高、最低或收盤價均有缺漏／異常，"
+            "目前沒有可繪製的有效 K 棒；請查看其他期間或補齊官方價量資料。"
+        )
+    warning = ""
+    if skipped:
+        # 揭露資料缺漏，不把缺失價填上前一日或收盤價。
+        skipped_dates = bars.index.difference(clean.index)
+        dates = [str(x.date()) if hasattr(x, "date") else str(x) for x in skipped_dates[:5]]
+        warning = (
+            f"所選期間有 {skipped} 根 K 棒缺少有效開／高／低／收價格，已略過該日期，"
+            f"其餘 {len(clean)} 根正常顯示。"
+            + (" 缺漏日期（最多顯示 5 筆）：" + "、".join(dates) if dates else "")
+        )
+    skipped_warning = warning
+    prepared = calculate_kd(clean)
     df = prepared.reset_index().copy()
     df["日期"] = pd.to_datetime(df["date"]).dt.strftime("%Y-%m-%d")
     df["漲跌"] = df["close"]-df["open"]
@@ -119,7 +148,6 @@ def chart_view(bars, panel, frequency="日線", inst=None, calendar=None):
             layers.append(base.mark_line(strokeWidth=1.6,color=hue).encode(x=xt,
                 y=alt.Y(f"{col}:Q"),tooltip=[alt.Tooltip("日期:N"),alt.Tooltip(f"{col}:Q",format=",.2f")]))
     primary=alt.layer(*layers).properties(height=355,title="紅漲綠跌｜日／週／月 K 線與移動平均線")
-    warning = ""
     if panel=="成交量":
         volumes = base.mark_bar(size=10).encode(x=xt,
             y=alt.Y("volume:Q",title="成交量（股）"),color=color,
@@ -190,4 +218,6 @@ def chart_view(bars, panel, frequency="日線", inst=None, calendar=None):
             bottom = alt.layer(bars,numbers)
     combined=alt.vconcat(primary,bottom.properties(height=145,title=panel),
                          spacing=5).resolve_scale(x="shared",y="independent")
+    if skipped_warning and warning != skipped_warning:
+        warning = skipped_warning + " " + warning
     return combined, warning

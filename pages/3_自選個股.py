@@ -4,7 +4,7 @@ import re
 import sqlite3
 from pathlib import Path
 from urllib.parse import urlencode
-from technical_charts import chart_view, PANEL_OPTIONS, calculate_kd
+from technical_charts import chart_view, PANEL_OPTIONS, calculate_kd, valid_ohlc_bars
 from price_periods import convert_price_period, chart_tail_count
 
 import pandas as pd
@@ -265,7 +265,7 @@ else:
     )
     if graphic is not None:
         st.altair_chart(graphic, use_container_width=True)
-        last = calculate_kd(shown).iloc[-1]
+        last = calculate_kd(valid_ohlc_bars(shown)).iloc[-1]
         change = float(last["close"]-last["open"])
         symbol = "🔴" if change>0 else "🟢" if change<0 else "⚪"
         st.caption(

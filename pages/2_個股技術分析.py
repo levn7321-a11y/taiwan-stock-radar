@@ -7,7 +7,7 @@ import requests
 import streamlit as st
 from top_nav import show_top_nav
 from price_periods import convert_price_period, chart_tail_count
-from technical_charts import chart_view, PANEL_OPTIONS, calculate_kd
+from technical_charts import chart_view, PANEL_OPTIONS, calculate_kd, valid_ohlc_bars
 
 st.set_page_config(
     page_title="個股技術分析",
@@ -302,7 +302,7 @@ chart_object, warning = chart_view(
 )
 if chart_object is not None:
     st.altair_chart(chart_object, use_container_width=True)
-    latest_bar=calculate_kd(chart).iloc[-1]
+    latest_bar=calculate_kd(valid_ohlc_bars(chart)).iloc[-1]
     delta=float(latest_bar["close"]-latest_bar["open"])
     marker="🔴" if delta>0 else "🟢" if delta<0 else "⚪"
     st.caption(

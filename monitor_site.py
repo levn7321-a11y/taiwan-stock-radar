@@ -21,10 +21,17 @@ def check_once(url, screenshot_path, timeout_ms=90000):
     response = requests.get(url, timeout=25, headers={"User-Agent": "TaiwanStockRadar-UptimeMonitor/1.0"})
     response.raise_for_status()
     health = url.rstrip("/") + "/_stcore/health"
-    resp = requests.get(health, timeout=25)
-    resp.raise_for_status()
-    if resp.text.strip().lower() != "ok":
-        raise RuntimeError(f"Streamlit health endpoint returned unexpected content: {resp.text[:80]!r}")
+    # Streamlit Cloud may route /_stcore/health to the SPA HTML shell.
+    # Treat its content as advisory, not a fatal error: only the real browser
+    # rendering below can establish whether users see the app or an Oh no screen.
+    try:
+        resp = requests.get(health, timeout=15)
+        if resp.status_code == 200 and resp.text.strip().lower() == "ok":
+            print("HEALTH_ENDPOINT_OK", flush=True)
+        else:
+            print(f"HEALTH_ENDPOINT_INCONCLUSIVE status={resp.status_code}; checking rendered UI", flush=True)
+    except requests.RequestException as exc:
+        print(f"HEALTH_ENDPOINT_UNAVAILABLE: {type(exc).__name__}; checking rendered UI", flush=True)
 
     # Streamlit can return HTTP 200 even when the app displays its fatal error UI.
     with sync_playwright() as browser_tools:

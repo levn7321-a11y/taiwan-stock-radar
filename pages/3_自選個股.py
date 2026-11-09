@@ -273,6 +273,16 @@ else:
             f"高 {last['high']:,.2f}｜低 {last['low']:,.2f}｜"
             f"收 {last['close']:,.2f}｜開收漲跌 {change:+,.2f}"
         )
+    if (indicator or "成交量") == "乖離率":
+        st.caption("乖離率 BIAS：6 期黃線｜12 期藍線｜24 期紫線；0% 為均線。正值表示收盤價在均線上方，負值表示下方。")
+        latest_bias = shown.iloc[-1]
+        parts = [
+            f"BIAS{n} {latest_bias[f'BIAS{n}']:+.2f}%"
+            for n in (6, 12, 24)
+            if f"BIAS{n}" in latest_bias and pd.notna(latest_bias[f"BIAS{n}"])
+        ]
+        if parts:
+            st.caption("最新乖離率｜" + "｜".join(parts))
     if warning:
         st.warning(warning)
     st.caption("紅漲綠跌｜投信與外資買賣超以張計算；歷史資料不代表盤中即時報價。")

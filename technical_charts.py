@@ -1,8 +1,8 @@
-"""共用台股 K 線及下方可切換指標：量能、KD、法人與外資。"""
+"""共用台股 K 線及下方可切換指標：量能、KD、BIAS、法人與外資。"""
 import altair as alt
 import pandas as pd
 
-PANEL_OPTIONS = ["成交量", "KD線", "投信買賣超", "外資買賣超"]
+PANEL_OPTIONS = ["成交量", "KD線", "乖離率", "投信買賣超", "外資買賣超"]
 RED = "#f04b58"       # 台股慣例：紅漲
 GREEN = "#17b978"     # 台股慣例：綠跌
 FLAT = "#9ca3af"
@@ -139,6 +139,32 @@ def chart_view(bars, panel, frequency="日線", inst=None, calendar=None):
             d=alt.Chart(valid).mark_line(strokeWidth=2,color="#67b7ef").encode(
                 x=xt,y="D:Q",tooltip=[alt.Tooltip("日期:N"),alt.Tooltip("D:Q",format=".1f")])
             bottom=alt.layer(k,d)
+    elif panel=="乖離率":
+        # BIAS6/12/24 are computed on the complete frequency series in
+        # convert_price_period BEFORE the selected lookback window is sliced.
+        # Only valid historical values are plotted; no invented early values.
+        bias_colors = {"BIAS6": "#e8b92c", "BIAS12": "#36a3d9", "BIAS24": "#a76be2"}
+        lines = []
+        for col, hue in bias_colors.items():
+            if col in df and df[col].notna().any():
+                valid = df.dropna(subset=[col])
+                lines.append(
+                    alt.Chart(valid).mark_line(strokeWidth=2, color=hue).encode(
+                        x=xt, y=alt.Y(f"{col}:Q", title="乖離率（%）"),
+                        tooltip=[alt.Tooltip("日期:N"),
+                                 alt.Tooltip(f"{col}:Q", title=f"{col}（%）", format="+.2f")]
+                    )
+                )
+        if lines:
+            zero = alt.Chart(pd.DataFrame({"基準":[0.0]})).mark_rule(
+                strokeDash=[4, 4], color="#94a3b8", opacity=0.8
+            ).encode(y="基準:Q")
+            bottom = alt.layer(zero, *lines)
+        else:
+            warning = "乖離率至少需要 6 根有效 K 棒；12、24 期線需有對應期數"
+            bottom = base.mark_point(opacity=0).encode(
+                x=xt, y=alt.Y("close:Q", title="乖離率（資料不足）")
+            )
     else:
         if inst is None or calendar is None or len(calendar)==0:
             warning="目前沒有法人資料，無法顯示買賣超"

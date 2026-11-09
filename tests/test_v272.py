@@ -23,8 +23,8 @@ class CandlestickPanelTests(unittest.TestCase):
             "volume":[1000+i for i in range(85)],
         })
 
-    def test_all_four_options_render_at_every_frequency(self):
-        self.assertEqual(len(PANEL_OPTIONS),4)
+    def test_all_five_options_render_at_every_frequency(self):
+        self.assertEqual(len(PANEL_OPTIONS),5)
         dates=self.days
         inst=pd.DataFrame({"date":dates,"foreign_net":[1000]*85,
                            "trust_net":[500]*85,"dealer_net":[-200]*85})

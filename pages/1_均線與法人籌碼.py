@@ -473,6 +473,16 @@ def render_stock_analysis(market, code, name, inst):
         )
         if (indicator or "成交量") == "KD線" and pd.notna(end_bar["K"]):
             st.caption(f"KD（9,3,3）：K {end_bar['K']:.1f}｜D {end_bar['D']:.1f}")
+    if (indicator or "成交量") == "乖離率":
+        st.caption("乖離率 BIAS：6 期黃線｜12 期藍線｜24 期紫線；0% 為均線。正值表示收盤價在均線上方，負值表示下方。")
+        latest_bias = show.iloc[-1]
+        parts = [
+            f"BIAS{n} {latest_bias[f'BIAS{n}']:+.2f}%"
+            for n in (6, 12, 24)
+            if f"BIAS{n}" in latest_bias and pd.notna(latest_bias[f"BIAS{n}"])
+        ]
+        if parts:
+            st.caption("最新乖離率｜" + "｜".join(parts))
     if missing:
         st.warning(missing)
     st.caption("台股慣例：紅漲綠跌。下方可切換成交量、KD、投信、外資買賣超（張）。")

@@ -70,6 +70,8 @@ class BiasUptimeTests(unittest.TestCase):
         self.assertIn("page.goto(url,",src)
         self.assertIn('Error running app',src)
         self.assertIn("/_stcore/health",src)
+        self.assertIn("HEALTH_ENDPOINT_INCONCLUSIVE",src)
+        self.assertNotIn("health endpoint returned unexpected content",src)
         self.assertIn('cron: "*/30 * * * *"',workflow)
         self.assertIn("gh issue create",workflow)
         self.assertIn("gh issue close",workflow)

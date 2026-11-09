@@ -312,9 +312,19 @@ if chart_object is not None:
     )
     if indicator == "KD線" and pd.notna(latest_bar["K"]):
         st.caption(f"KD（9,3,3）｜K {latest_bar['K']:.1f}｜D {latest_bar['D']:.1f}")
+if (indicator or "成交量") == "乖離率":
+    st.caption("乖離率 BIAS：6 期黃線｜12 期藍線｜24 期紫線；0% 為均線。正值表示收盤價在均線上方，負值表示下方。")
+    latest_bias = chart.iloc[-1]
+    parts = [
+        f"BIAS{n} {latest_bias[f'BIAS{n}']:+.2f}%"
+        for n in (6, 12, 24)
+        if f"BIAS{n}" in latest_bias and pd.notna(latest_bias[f"BIAS{n}"])
+    ]
+    if parts:
+        st.caption("最新乖離率｜" + "｜".join(parts))
 if warning:
     st.warning(warning)
-st.caption("台股慣例：紅漲綠跌。下方可切換成交量、KD、三大法人、外資；法人以張為單位，買超紅色、賣超綠色。")
+st.caption("台股慣例：紅漲綠跌。下方可切換成交量、KD、乖離率、投信、外資；法人以張為單位，買超紅色、賣超綠色。")
 
 st.subheader("🔍 技術觀察")
 

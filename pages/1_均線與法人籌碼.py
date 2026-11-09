@@ -9,7 +9,7 @@ import altair as alt
 import streamlit as st
 from top_nav import show_top_nav
 from price_periods import convert_price_period, chart_tail_count
-from technical_charts import chart_view, PANEL_OPTIONS, calculate_kd
+from technical_charts import chart_view, PANEL_OPTIONS, calculate_kd, valid_ohlc_bars
 from search_popularity import record_stock_search, top_stock_searches
 from ranking_snapshot import snapshot_ranking
 
@@ -461,7 +461,7 @@ def render_stock_analysis(market, code, name, inst):
     )
     if kchart is not None:
         st.altair_chart(kchart, use_container_width=True)
-        detail = calculate_kd(show)
+        detail = calculate_kd(valid_ohlc_bars(show))
         end_bar = detail.iloc[-1]
         change = float(end_bar["close"] - end_bar["open"])
         color = "🔴" if change > 0 else "🟢" if change < 0 else "⚪"

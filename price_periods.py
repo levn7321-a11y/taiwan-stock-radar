@@ -33,6 +33,12 @@ def convert_price_period(df, frequency, *, index_col="date"):
     for n in (5, 10, 20, 60, 240):
         frame[f"MA{n}"] = frame["close"].rolling(n, min_periods=n).mean()
     frame["均量20"] = frame["volume"].rolling(20, min_periods=20).mean()
+    # 乖離率 BIAS = (收盤 - N 期均線) / N 期均線 × 100%。
+    # 先在完整的日／週／月行情上計算，再依觀察期間裁切。
+    for n in (6, 12, 24):
+        ma = frame["close"].rolling(n, min_periods=n).mean()
+        frame[f"BIAS{n}"] = (frame["close"] / ma.where(ma.ne(0)) - 1) * 100
+
     frame.index.name = "date"
     return frame
 

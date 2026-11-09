@@ -1,0 +1,19 @@
+name: BIAS乖離率與網站監控測試
+on:
+  push:
+    branches: [feature/site-uptime-bias-indicator]
+  pull_request:
+    branches: [main]
+permissions:
+  contents: read
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: pip install -r requirements.txt 'altair>=5,<7'
+      - run: python -m compileall -q technical_charts.py price_periods.py monitor_site.py pages
+      - run: python -m unittest discover -s tests -p 'test_bias_uptime.py' -v
